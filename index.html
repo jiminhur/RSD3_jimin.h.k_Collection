@@ -7,11 +7,12 @@
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
-<!-- ===== CINEMATIC LOADING SEQUENCE ===== -->
 <div id="loader">
-  <div id="ld-bg"></div>
-  <img id="ld-img" src="loadingpage_background_1.jpg" alt="">
+  <div id="ld-strip">
+    <img src="loadingpage_background_1.jpg" alt=""><img src="loadingpage_background_3.jpg" alt=""><img src="loadingpage_background_2.jpg" alt="">
+    <img src="loadingpage_background_1.jpg" alt=""><img src="loadingpage_background_3.jpg" alt=""><img src="loadingpage_background_2.jpg" alt="">
+    <img src="loadingpage_background_1.jpg" alt=""><img src="loadingpage_background_3.jpg" alt=""><img src="loadingpage_background_2.jpg" alt="">
+  </div>
   <img id="ld-logo" src="This_Web_Does_Not_Comply_logo.png" alt="">
   <div id="ld-pct">0%</div>
 </div>
@@ -27,13 +28,9 @@
   <span class="ba">&larr; Do not click the words.</span>
 </header>
 
-<!-- VERTICAL SCROLL CONTAINER -->
 <div id="sc" class="hide">
   <div id="tall">
-    <!-- Dynamic sections inserted here by JS (top = furthest from start) -->
     <div id="dyn"></div>
-
-    <!-- INDEX PAGE (uses Whole_content_index.jpg) -->
     <section id="s-idx" class="idx-sec">
       <img src="Whole_content_index.jpg" class="sec-bg" alt="">
       <div class="idx-ctr">
@@ -41,16 +38,31 @@
         <div class="idx-g" id="idx-g"></div>
       </div>
     </section>
-
-    <!-- MAIN THEME PAGE (uses The_main_Page.jpg) -->
     <section id="s-theme" class="theme-sec">
       <img src="The_main_page.jpg" class="sec-bg" alt="">
     </section>
-
-    <!-- MAIN BOTTOM PAGE (absolute bottom boundary) -->
     <section id="s-bottom" class="bottom-sec">
       <img src="Main_bottom.jpg" class="sec-bg" alt="">
+      <img src="Main_bottom_error.jpg" class="sec-bg bottom-err" alt="">
     </section>
+  </div>
+</div>
+
+<div id="save-btns" class="hide">
+  <button id="btn-save" class="sys-btn">SAVE IMAGE</button>
+  <button id="btn-print" class="sys-btn">PRINT ARCHIVE</button><button id="btn-poster" class="sys-btn">GENERATE POSTER</button>
+</div>
+
+
+<div id="mag"><div id="mag-ring"></div></div>
+
+<div id="print-overlay" class="hide">
+  <div id="print-room">
+    <canvas id="print-cv"></canvas>
+    <div id="print-ui">
+      <button id="print-dl" class="sys-btn">DOWNLOAD ARCHIVE</button>
+      <button id="print-close" class="sys-btn-ghost">← RETURN TO SYSTEM</button>
+    </div>
   </div>
 </div>
 
