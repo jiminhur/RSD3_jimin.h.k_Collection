@@ -160,3 +160,47 @@ section{width:100%;position:relative;overflow:hidden}
 #det-bg-canvas{
   position:absolute;inset:0;z-index:0;pointer-events:none;
 }
+
+/* ── VIDEO COLOR INTEGRATION ──────────────────────────────────────
+   Goal: make video feel part of the same graphic system.
+   Filter: nudge saturation/contrast/brightness to match lime system.
+   Overlay: very subtle lime soft-light tint via ::after pseudo-element.
+   Applied to: .frame (preview tiles) and .det-room (focused view).
+────────────────────────────────────────────────────────────────── */
+
+/* Color correction on the video element itself */
+.frame video,
+#det-room video {
+  filter:
+    saturate(1.22)
+    contrast(1.06)
+    brightness(1.02)
+    hue-rotate(-3deg);
+}
+
+/* Lime overlay on preview frame — sits above video, below sound button */
+.frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #DFFF00;
+  mix-blend-mode: soft-light;
+  opacity: 0.10;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Sound button must remain above overlay */
+.snd-btn { z-index: 10; }
+
+/* Lime overlay on focused detail view */
+.det-room::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #DFFF00;
+  mix-blend-mode: soft-light;
+  opacity: 0.10;
+  pointer-events: none;
+  z-index: 4;
+}
