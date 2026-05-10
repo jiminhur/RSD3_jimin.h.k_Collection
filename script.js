@@ -185,83 +185,109 @@ function startWebsite(){
   Colors mix across lines within each stamp.
 */
 /*
-  INPUT: tight woven 3×4 grid.
-  Canvas is divided into a 3-col × 4-row grid.
-  Each keypress fills one cell with layered, overlapping text.
-  No giant rectangles. Focus: layered typography, refined overlap.
-  Colors cycle as printed layers: lime base, pink mid, gray top.
+  INPUT: 3×4 woven grid system.
+  ONE fixed font size (FS=13) throughout — no random scaling.
+  Canvas → 3 cols × 4 rows → each keypress claims one cell.
+  5 pattern types create distinct woven structures within the cell.
+  Layering: 3 color passes (lime → pink → gray) each offset slightly,
+  giving the impression of stacked printed layers.
+  No endless vertical repetition. No oversized elements.
 */
 function buildInputPattern(ch,cmd,pat,W,H,idx){
+  const FS=13; /* ONE consistent size everywhere */
   const COLORS=[LIME_BG,PINK_BG,GRAY_BG];
   const lines=[];
   const label='#'+cmd.n+' '+cmd.text;
-  /* Structured 3-col × 4-row grid */
+
+  /* 3-col × 4-row invisible grid */
   const COLS=3,ROWS=4;
-  const cellW=W*.9/COLS;
-  const cellH=(H*.82)/ROWS;
+  const cellW=W*.88/COLS;
+  const cellH=H*.8/ROWS;
   const col=idx%COLS;
   const row=Math.floor(idx/COLS)%ROWS;
-  /* Cell origin — tight padding */
-  const x0=W*.05+col*cellW;
+  const x0=W*.06+col*cellW;
   const y0=H*.08+row*cellH;
+  /* Cell center for expansion patterns */
+  const cx=x0+cellW*.5;
+  const cy=y0+cellH*.5;
 
-  /* All patterns: small typography, tight overlap, no big blocks */
   if(pat===0){
-    /* Layer A: horizontal repeats of char across cell width */
-    const fs=13;const step=cellW/6;
-    for(let li=0;li<3;li++){/* 3 color layers */
-      for(let xi=0;xi<6;xi++){
-        lines.push({x:x0+xi*step,y:y0+li*16,text:ch,fs,bg:COLORS[li]});
+    /* HORIZONTAL WEAVE: 3 color layers, each row offset by 8px */
+    const lineH=FS+5;
+    const linesPerLayer=Math.floor(cellH/lineH);
+    for(let li=0;li<3;li++){
+      const xOff=li*8; /* layer offset creates weave depth */
+      for(let ri=0;ri<linesPerLayer;ri++){
+        /* Alternate char and label short form */
+        const txt=ri%2===0?ch:cmd.text.slice(0,10);
+        lines.push({x:x0+xOff,y:y0+ri*lineH+li*2,text:txt,fs:FS,bg:COLORS[li]});
       }
     }
-    /* Layer B: command label once at bottom of cell */
-    lines.push({x:x0+2,y:y0+cellH*.7,text:label,fs:11,bg:COLORS[1]});
 
   }else if(pat===1){
-    /* Diagonal weave: cmd text cascades diagonally in 3 color passes */
-    const count=6;const dir=idx%2===0?1:-1;
+    /* DIAGONAL CROSS: 2 diagonal streams crossing the cell */
+    const steps=Math.floor(Math.min(cellW,cellH)/(FS+4));
+    /* Stream A: top-left → bottom-right */
     for(let li=0;li<3;li++){
-      for(let i=0;i<count;i++){
-        lines.push({x:x0+(i*18+li*6)*dir,y:y0+i*14+li*3,text:i%2===0?ch:label.slice(0,8),fs:12,bg:COLORS[li]});
+      for(let i=0;i<steps;i++){
+        lines.push({
+          x:x0+i*(cellW/steps)+li*4,
+          y:y0+i*(cellH/steps)+li*2,
+          text:i%2===0?ch:'#'+cmd.n,fs:FS,bg:COLORS[li]
+        });
       }
+    }
+    /* Stream B: top-right → bottom-left (offset layer) */
+    for(let i=0;i<steps;i++){
+      lines.push({
+        x:x0+cellW-i*(cellW/steps),
+        y:y0+i*(cellH/steps)+6,
+        text:cmd.text.slice(0,6),fs:FS,bg:COLORS[(i+1)%3]
+      });
     }
 
   }else if(pat===2){
-    /* Vertical columns: three columns of chars in lime/pink/gray */
-    const fs=12;const rows2=Math.floor(cellH/16);
-    for(let ci=0;ci<3;ci++){
-      for(let ri=0;ri<rows2;ri++){
-        lines.push({x:x0+ci*(cellW/3)+2,y:y0+ri*16,text:ri%2===0?ch:label.slice(0,6),fs,bg:COLORS[ci]});
-      }
-    }
+    /* CONCENTRIC RINGS: repeated text at 3 expanding distances from center */
+    const radii=[cellH*.18,cellH*.34,cellH*.5];
+    const angles=[0,Math.PI*.5,Math.PI,Math.PI*1.5,Math.PI*.25,Math.PI*.75,Math.PI*1.25,Math.PI*1.75];
+    radii.forEach((rad,li)=>{
+      angles.forEach((ang,ai)=>{
+        const txt=ai%2===0?ch:'#'+cmd.n;
+        lines.push({
+          x:cx+Math.cos(ang)*rad*1.4-10,
+          y:cy+Math.sin(ang)*rad*.7,
+          text:txt,fs:FS,bg:COLORS[li]
+        });
+      });
+    });
 
   }else if(pat===3){
-    /* Dense overlap: three offset copies of label in different colors */
-    const offsets=[{dx:0,dy:0},{dx:4,dy:3},{dx:8,dy:6}];
-    for(let li=0;li<3;li++){
-      const o=offsets[li];
-      const count2=Math.floor(cellH/18);
-      for(let ri=0;ri<count2;ri++){
-        lines.push({x:x0+o.dx,y:y0+ri*18+o.dy,text:label,fs:12,bg:COLORS[li]});
+    /* STACKED OFFSET COLUMNS: 3 printed copies, each shifted right+down */
+    /* Creates the visible-side-surface depth effect */
+    const colW=cellW/3;
+    [0,1,2].forEach(li=>{
+      const dx=li*6,dy=li*4; /* consistent diagonal offset = printed depth */
+      const linesInCol=Math.floor(cellH/(FS+6));
+      for(let ri=0;ri<linesInCol;ri++){
+        const txt=ri%3===0?ch:ri%3===1?'#'+cmd.n:cmd.text.slice(0,8);
+        lines.push({x:x0+dx,y:y0+ri*(FS+6)+dy,text:txt,fs:FS,bg:COLORS[li]});
       }
-    }
+    });
 
   }else{
-    /* Scattered-but-ordered: deterministic grid with slight jitter */
-    const seed=idx*7+3;
-    const rows2=4,cols2=4;
-    for(let ri=0;ri<rows2;ri++){for(let ci=0;ci<cols2;ci++){
-      const jx=((seed*ri*3+ci*5)%8)-4;
-      const jy=((seed*ci*3+ri*7)%8)-4;
-      const fs2=10+((seed*(ri+1)*(ci+1))%4)*2;/* 10–16 */
-      lines.push({
-        x:x0+ci*(cellW/cols2)+jx,
-        y:y0+ri*(cellH/rows2)+jy,
-        text:(ri+ci)%3===0?label.slice(0,8):ch,
-        fs:fs2,
-        bg:COLORS[(ri+ci)%3]
-      });
-    }}
+    /* GRID FILL: deterministic 4×3 sub-grid within cell — no randomness */
+    const subCols=4,subRows=3;
+    const sw=cellW/subCols,sh=cellH/subRows;
+    for(let ri=0;ri<subRows;ri++){
+      for(let ci=0;ci<subCols;ci++){
+        const li=(ri+ci)%3;
+        const txt=(ri+ci)%3===0?ch:(ri+ci)%3===1?'#'+cmd.n:cmd.text.slice(0,7);
+        lines.push({
+          x:x0+ci*sw,y:y0+ri*sh,
+          text:txt,fs:FS,bg:COLORS[li]
+        });
+      }
+    }
   }
 
   inputStamps.push({lines,born:Date.now()});
@@ -568,8 +594,8 @@ function renderAlign(cv){
   });
   ctx.save();ctx.globalAlpha=1;
   alignStamps.forEach(s=>{
-    ctx.font=FM(15);ctx.textBaseline='middle';const tw=ctx.measureText(s.text).width;
-    block(ctx,s.x,s.y,tw,15,s.bgColor,5,3);ctx.fillStyle='rgba(10,10,10,.9)';ctx.fillText(s.text,s.x,s.y);
+    ctx.font=FM(12);ctx.textBaseline='middle';const tw=ctx.measureText(s.text).width;
+    block(ctx,s.x,s.y,tw,12,s.bgColor,4,3);ctx.fillStyle='rgba(10,10,10,.9)';ctx.fillText(s.text,s.x,s.y);
   });
   ctx.restore();
   ctx.textBaseline='middle';
@@ -720,23 +746,24 @@ function renderControl(cv){
     arrow(ctx,gx,gy,gx+(-dy/d+dx/d*.3)*12,gy+(dx/d+dy/d*.3)*12,3);
   }}
 
-  /* Draw all traces — back layers first */
+  /* Draw all traces — unified box width (longest label drives all) */
   const boxH=26,boxPad=4;
   ctx.font=FM(13);ctx.textBaseline='middle';
 
   for(const trace of controlTraces){
     const{x,y,cmdBoxes,layers}=trace;
-    /* Draw from deepest layer to shallowest */
+    /* Compute max label width so all boxes share same width */
+    const maxW=Math.max(...cmdBoxes.map(b=>ctx.measureText(b.text).width));
+    const unifiedW=maxW+boxPad*2;
+
     for(let li=layers.length-1;li>=0;li--){
       const l=layers[li];
       for(let bi=0;bi<cmdBoxes.length;bi++){
         const box=cmdBoxes[bi];
         const bx=x+l.dx;
         const by=y+box.localY+l.dy;
-        const tw=ctx.measureText(box.text).width;
-        /* Flat color block — side surfaces visible between layers */
-        ctx.fillStyle=box.bg;ctx.fillRect(bx-boxPad,by-boxH/2,tw+boxPad*2,boxH);
-        /* Text only on front layers (li <= 2) for readability */
+        /* All boxes same width */
+        ctx.fillStyle=box.bg;ctx.fillRect(bx-boxPad,by-boxH/2,unifiedW,boxH);
         if(li<=2){
           ctx.fillStyle='rgba(10,10,10,.92)';ctx.fillText(box.text,bx,by);
         }
