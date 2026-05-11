@@ -1,45 +1,37 @@
 /* ═══════════════════════════════════════════════════════════════════
-   THIS WEB DOES NOT COMPLY — v18 (final refinement)
-   Surgical only. Video pipeline, paths, autoplay untouched.
+   THIS WEB DOES NOT COMPLY — v19 (FINAL refinement)
+   Surgical only. Video pipeline / paths / autoplay untouched.
 
-   CHANGES vs v17:
+   CHANGES vs v18:
    ───────────────
-   • START POSITION: scrollIntoView targets #s-theme (second-from-
-     bottom main page), and uses 'auto' behavior so it lands instantly
-     after load — no visible auto-scroll animation.
-
-   • VIDEO MASK COLOR: invisible — handled in CSS by setting frame
-     and video backgrounds to page bg (--wh). No box edges.
-
-   • CURSOR: removed in-canvas crosshair entirely. The DOM #mag
-     element (stronger lime, thicker, no fill) is now the only
-     cursor visible. drawCursor() calls removed from all renders.
-
-   • ALIGN: drag stamps now generate across the FULL canvas range.
-     Initial scatter widened. Magnetic snap-to-rest still pulls
-     the active labels back to unified column.
-
-   • INPUT BOUNDARY: right clamp now accounts for full label width
-     so command text is never visibly cut off. Left side moved
-     slightly more left to balance.
-
-   • CONTROL:
-     - Initial state: NO automatic movement. Renders ONCE as a clean
-       horizontal connected row of 3 boxes, then stays static until
-       interaction (loop skips re-render when no traces and no drag).
-     - Removed arrows entirely (already done v17; verified gone).
-     - "Drag to Control" hint = HTML element matching INPUT's hint.
-
-   • LOOP: vertical freedom (already in v17, retained).
+   • LANDING FLOW (hardened):
+     scroll-snap is temporarily disabled via #sc.no-snap, then we
+     directly set scrollTop to the second-from-bottom section
+     (#s-theme). Two retries on rAF cover layout-not-ready cases.
+     Snap re-enabled after position is locked.
 
    • DETAIL VIEW:
-     - Buttons restyled in CSS to match "Type to Insert" hint.
-     - No white side boxes: .det-room background is transparent
-       (CSS), section background is the same page color.
+     - Smaller (CSS): .det-room 72vw (was 82), max-height 70vh.
+     - No white side boxes: object-fit:cover on the focused video.
+       The 16:9 room matches the video aspect ratio, so cover crops
+       effectively nothing — identical composition, no letterbox.
 
-   • SCROLL SNAP: handled in CSS (section height = container height,
-     not 100vh, so the lower edge of the video row consistently
-     lands at viewport bottom across all sections).
+   • ALIGN: drag spread fully unbounded. Initial scatter spans
+     the WHOLE canvas (.04 → .96 horizontally, .04 → .92 vertically).
+     Grab radius 380px. Stamps render with zero clipping.
+
+   • CURSOR COLOR: dynamic — JS detects via elementFromPoint whether
+     the pointer is over a lime element (#bar / lime backgrounds /
+     idx-b hover lime). When over lime → pink outline; otherwise →
+     lime outline. Smooth CSS transition handles the swap.
+
+   • LOOP: time-base for stream scrolling now tied to a dedicated
+     loopT counter that only advances during active drag. Without
+     interaction the streams sit perfectly still.
+
+   • CONTROL: initial state shows ONLY the unified left command stack
+     + the HTML hint bar. The extra horizontal "connector row" is
+     removed entirely.
 ═══════════════════════════════════════════════════════════════════ */
 
 const D={
@@ -84,22 +76,21 @@ const BG_ALPHA=0.028;
 const FM=s=>`500 ${s}px 'Monument','Helvetica Neue',Arial,sans-serif`;
 const CMD_FS=13;const CMD_PX=6;const CMD_PY=4;
 
-/* Video row geometry — synced with CSS */
+/* Cursor colors — strong, no fill, JS swaps via #mag.style.borderColor */
+const CURSOR_LIME='rgba(223,255,0,.95)';
+const CURSOR_PINK='rgba(255,204,216,.95)';
+
 const VIDEO_ROW_FRAC=(31.5/100)*(9/16);
-function videoRowHeight(){
-  return window.innerWidth*VIDEO_ROW_FRAC;
-}
+function videoRowHeight(){return window.innerWidth*VIDEO_ROW_FRAC}
 function safeStageBottom(cvH){
   const vh=videoRowHeight();
   return Math.max(40, cvH - vh - 6);
 }
 
-/* Visible video edge bounds */
 const VIDEO_LEFT_BOUND_FRAC = 0.054;
 const VIDEO_RIGHT_BOUND_FRAC = 1 - 0.054;
 
-/* Unified command stack positioning */
-const UNIFIED_CMD_X_FRAC = 0.10; /* moved slightly left for safer bounds */
+const UNIFIED_CMD_X_FRAC = 0.10;
 const UNIFIED_CMD_ROWS = [0.10, 0.23, 0.36];
 
 const $=id=>document.getElementById(id);
@@ -119,8 +110,9 @@ let inputCount=0;
 let selectAnchors=[];
 const selectConns=[];
 
-/* LOOP */
+/* LOOP — dedicated time only advances on active drag */
 let loopScale=1.0,loopDrag=null;
+let loopT=0; /* scrolls streams only when user drags */
 
 /* CONTROL */
 const controlTraces=[];
@@ -156,20 +148,46 @@ document.addEventListener('DOMContentLoaded',()=>{
   }
 });
 
+/* ─── HARDENED START POSITION ────────────────────────────────────
+   Force scroll to #s-theme (second-from-bottom) with snap disabled.
+   This bypasses scroll-snap's tendency to fight initial positioning.
+   Two rAF retries catch the case where layout isn't measured yet. */
+function lockStartPosition(){
+  const sc = $('sc');
+  const target = $('s-theme');
+  if(!sc || !target) return false;
+  /* Disable snap during the jump */
+  sc.classList.add('no-snap');
+  /* offsetTop is measured against the offsetParent (#tall),
+     and #tall is the scroll content of #sc → offsetTop is the
+     correct scroll position. */
+  const y = target.offsetTop;
+  if(y < 1) return false; /* layout not ready */
+  sc.scrollTop = y;
+  /* Re-enable snap after the next frame */
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      sc.classList.remove('no-snap');
+    });
+  });
+  return true;
+}
+
 function startWebsite(){
   $('bar')?.classList.remove('hide');
   $('sc')?.classList.remove('hide');
   buildIndex();buildSections();
 
-  /* ─── START POSITION ──────────────────────────────────────────
-     Second-from-bottom image = #s-theme (main page). The order in
-     the DOM is: #dyn (categories), #s-idx (index), #s-theme (main),
-     #s-bottom (very bottom). So #s-theme is the second from bottom.
-     Use 'auto' (instant) so the user lands there immediately after
-     the loader fades out — no visible scroll animation. */
+  /* Try to lock start position immediately, then retry if layout
+     hadn't settled yet. Multiple attempts ensure it lands correctly. */
   requestAnimationFrame(()=>{
-    const target = $('s-theme');
-    if(target) target.scrollIntoView({behavior:'auto', block:'start'});
+    if(!lockStartPosition()){
+      requestAnimationFrame(()=>{
+        if(!lockStartPosition()){
+          setTimeout(lockStartPosition, 50);
+        }
+      });
+    }
   });
 
   const sc=$('sc');
@@ -215,27 +233,19 @@ function startWebsite(){
   wireEvents();requestAnimationFrame(loop);
 }
 
-/* ─── INPUT pattern builder — label-aware right boundary ───────── */
+/* ─── INPUT pattern builder ─────────────────────────────────────── */
 const INPUT_ROWS=[.12,.30,.48];
-
 const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
 
 function buildInputPattern(ch,cmd,pat,W,H,idx){
   const COLORS=[LIME_BG,PINK_BG,GRAY_BG];
   const lines=[];
   const label='#'+cmd.n+' '+cmd.text;
-
   const stageBottom=safeStageBottom(H);
 
-  /* Bounds shifted: left moved further inside (.04 instead of .054)
-     and right pulled in to leave room for full label widths.
-     This ensures command text is never visibly clipped. */
   const xL = W * 0.04;
   const xR = W * VIDEO_RIGHT_BOUND_FRAC;
-  const usableW = xR - xL;
 
-  /* Measure the actual label width with a fresh canvas context so
-     the right-edge clamp can be precise. */
   let labelW = 180;
   try{
     const probe = document.createElement('canvas').getContext('2d');
@@ -245,11 +255,7 @@ function buildInputPattern(ch,cmd,pat,W,H,idx){
     }
   }catch(_){}
 
-  /* Generation right limit = video right boundary MINUS label width.
-     This guarantees no label crosses the visible video right edge. */
   const genRight = xR - labelW;
-
-  /* Four columns evenly across the safe range */
   const cols = [
     xL + (genRight - xL) * 0.02,
     xL + (genRight - xL) * 0.30,
@@ -279,7 +285,6 @@ function buildInputPattern(ch,cmd,pat,W,H,idx){
   const rowCount = Math.min(Math.floor(cellH / step), 4);
   const charStep = CMD_FS + 6;
 
-  /* Horizontal char rows — bounded so a 1-2 char block fits */
   for(let ri = 0; ri < rowCount; ri++){
     const y = clamp(y0 + ri * step, 0, stageBottom - CMD_FS);
     const charCount = Math.min(Math.floor(cellW / charStep), 4);
@@ -290,20 +295,17 @@ function buildInputPattern(ch,cmd,pat,W,H,idx){
     }
   }
 
-  /* Diagonal command overlay — full-label safe placement */
   const diagCount = Math.max(4, rowCount - 1);
   for(let di = 0; di < diagCount; di++){
     const t = di / (diagCount - 1);
     const baseX = colIdx % 2 === 0
       ? x0 + t * cellW * 0.6
       : x0 + cellW * (1 - t * 0.6);
-    /* Clamp against genRight (which already subtracts label width) */
     const x = clamp(baseX, xL, genRight);
     const y = clamp(y0 + di * step + step * 0.5, 0, stageBottom - CMD_FS);
     lines.push({x, y, text: label, fs: CMD_FS, bg: colorB});
   }
 
-  /* Marker label at top of cell */
   const markerX = clamp(x0, xL, genRight);
   const markerY = clamp(y0 - step, 0, stageBottom - CMD_FS);
   lines.push({x: markerX, y: markerY, text: label, fs: CMD_FS, bg: colorC});
@@ -382,9 +384,6 @@ function buildTiles(c){
     vid.playsInline=true;
     vid.preload    ='auto';
     vid.loop       =false;
-    /* Inline style — background now matches page bg (#f0f0ee).
-       Combined with the frame's matching background, the masked
-       edges are invisible. */
     vid.setAttribute('style',
       'position:absolute;inset:0;width:100%;height:100%;'+
       'object-fit:contain;display:block;visibility:visible;opacity:1;'+
@@ -457,13 +456,13 @@ function checkVideos(){
 
 /* ─── Wire Events ────────────────────────────────────────────────── */
 function wireEvents(){
+  /* ALIGN — generous grab radius */
   const cvA=$('worm-Align');
   if(cvA){
     cvA.addEventListener('mousedown',e=>{
       const r=cvA.getBoundingClientRect();const rx=e.clientX-r.left,ry=e.clientY-r.top;
       let best=null,bd=9999;
-      /* Generous grab radius — easy to reach any block from anywhere */
-      alignBlocks.forEach((b,i)=>{const d=Math.hypot(b.x-rx,b.y-ry);if(d<bd&&d<320){bd=d;best=i}});
+      alignBlocks.forEach((b,i)=>{const d=Math.hypot(b.x-rx,b.y-ry);if(d<bd&&d<380){bd=d;best=i}});
       if(best!==null)alignDrag={i:best,ox:rx,oy:ry,lastSx:rx,lastSy:ry};
     });
     cvA.addEventListener('mousemove',e=>{
@@ -472,6 +471,7 @@ function wireEvents(){
       const dx=rx-alignDrag.ox,dy=ry-alignDrag.oy;
       const b=alignBlocks[alignDrag.i];
       b.vx=dx*.5;b.vy=dy*.5;b.x+=dx*.7;b.y+=dy*.7;b.snapped=false;
+      /* Stamp drops freely — no bounds check, drag anywhere */
       if(Math.hypot(rx-alignDrag.lastSx,ry-alignDrag.lastSy)>20){
         alignStamps.push({x:b.x,y:b.y,text:'#'+b.n+' '+b.text,bgColor:b.bgColor});
         alignDrag.lastSx=rx;alignDrag.lastSy=ry;
@@ -479,6 +479,7 @@ function wireEvents(){
       alignDrag.ox=rx;alignDrag.oy=ry;
     });
     cvA.addEventListener('mouseup',()=>{alignDrag=null});
+    cvA.addEventListener('mouseleave',()=>{alignDrag=null});
   }
 
   $('worm-Select')?.addEventListener('click',e=>{
@@ -515,11 +516,29 @@ function wireEvents(){
     }
   });
 
+  /* LOOP — advance loopT ONLY during active drag */
   const cvL=$('worm-Loop');
   if(cvL){
-    cvL.addEventListener('mousedown',e=>{const r=cvL.getBoundingClientRect();loopDrag={ox:e.clientX-r.left}});
-    cvL.addEventListener('mousemove',e=>{if(!loopDrag)return;const r=cvL.getBoundingClientRect();const rx=e.clientX-r.left;loopScale=Math.max(.25,Math.min(3,loopScale+(rx-loopDrag.ox)*.006));loopDrag.ox=rx});
+    cvL.addEventListener('mousedown',e=>{
+      const r=cvL.getBoundingClientRect();
+      loopDrag={ox:e.clientX-r.left, oy:e.clientY-r.top};
+    });
+    cvL.addEventListener('mousemove',e=>{
+      if(!loopDrag)return;
+      const r=cvL.getBoundingClientRect();
+      const rx=e.clientX-r.left;
+      const ry=e.clientY-r.top;
+      const dx=rx-loopDrag.ox;
+      const dy=ry-loopDrag.oy;
+      /* Horizontal drag adjusts amplitude scale */
+      loopScale=Math.max(.25,Math.min(3,loopScale+dx*.006));
+      /* Drag motion advances stream scroll only while moving */
+      loopT += (dx + dy) * 0.012;
+      loopDrag.ox=rx;
+      loopDrag.oy=ry;
+    });
     cvL.addEventListener('mouseup',()=>{loopDrag=null});
+    cvL.addEventListener('mouseleave',()=>{loopDrag=null});
   }
 
   const cvC=$('worm-Control');
@@ -596,10 +615,6 @@ function drawBg(ctx,W,H,cmds){
   ctx.restore();
 }
 
-/* drawCursor REMOVED — the DOM #mag element is the only cursor.
-   No more center crosshair on any canvas. */
-
-/* Shared helper: unified command stack at left column */
 function drawUnifiedCommandStack(ctx, W, H, dataset){
   ctx.font=FM(CMD_FS);
   ctx.textBaseline='middle';
@@ -616,11 +631,7 @@ function drawUnifiedCommandStack(ctx, W, H, dataset){
   });
 }
 
-/* ═══ ALIGN — full-stage drag range ════════════════════════════════
-   Animated drag-blocks settle at unified positions, but stamp
-   trails can be drawn ANYWHERE on the canvas. The worm canvas
-   sits below the video row z-index, so any stamp behind the
-   video layer is naturally hidden by the videos themselves. */
+/* ═══ ALIGN — full canvas drag range, no clipping ══════════════════ */
 function initAlign(W,H){
   if(alignBlocks.length)return;
   D.Align.forEach((cmd,i)=>{
@@ -629,8 +640,9 @@ function initAlign(W,H){
     alignBlocks.push({
       n:cmd.n,text:cmd.text,bgColor:CMD_BG[i],
       tx,ty,
-      x:W*.05+Math.random()*W*.9,
-      y:H*.05+Math.random()*H*.6,
+      /* Initial scatter spans full canvas — nearly the entire stage */
+      x: W*.04 + Math.random()*W*.92,
+      y: H*.04 + Math.random()*H*.88,
       vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4,
       snapped:false
     });
@@ -642,7 +654,7 @@ function renderAlign(cv){
   ctx.fillStyle='#f0f0ee';ctx.fillRect(0,0,W,H);
   drawBg(ctx,W,H,D.Align);
 
-  /* Guide line and target ticks at unified positions */
+  /* Guide line + ticks at unified positions */
   ctx.save();
   ctx.strokeStyle='rgba(0,0,0,.04)';ctx.lineWidth=.5;
   const guideX = W * UNIFIED_CMD_X_FRAC;
@@ -658,7 +670,7 @@ function renderAlign(cv){
   });
   ctx.restore();
 
-  /* Physics toward unified positions */
+  /* Physics toward unified targets */
   alignBlocks.forEach((b,i)=>{
     if(alignDrag?.i===i)return;
     const k=b.snapped?.18:.055;
@@ -669,7 +681,7 @@ function renderAlign(cv){
     }
   });
 
-  /* Stamps — render across FULL canvas without any clipping */
+  /* Stamps — ZERO clipping, render anywhere on canvas */
   ctx.save();ctx.globalAlpha=1;
   alignStamps.forEach(s=>{
     ctx.font=FM(CMD_FS);ctx.textBaseline='middle';
@@ -695,7 +707,6 @@ function renderAlign(cv){
       arrow(ctx,b.x+tw+4,b.y,b.tx+tw*.3+4,b.ty,2.5);
     }
   });
-  /* No drawCursor — DOM cursor is the only one */
 }
 
 /* ═══ INPUT ════════════════════════════════════════════════════════ */
@@ -705,10 +716,6 @@ function renderInput(cv){
   drawBg(ctx,W,H,D.Input);
 
   const stageBottom=safeStageBottom(H);
-
-  /* Clip: top → stageBottom; left → 0; right → exact video right edge.
-     The pattern builder's label-aware clamp ensures labels never
-     visually touch xR but this also catches any stray edge case. */
   const xR = W * VIDEO_RIGHT_BOUND_FRAC;
   ctx.save();
   ctx.beginPath();
@@ -779,7 +786,7 @@ function renderSelect(cv){
   }
 }
 
-/* ═══ LOOP — full vertical freedom; video covers via z-order ══════ */
+/* ═══ LOOP — stream scroll tied to loopT (advances only on drag) ══ */
 function renderLoop(cv){
   const r=sz(cv);if(!r)return;const{ctx,W,H}=r;
   ctx.fillStyle='#f0f0ee';ctx.fillRect(0,0,W,H);
@@ -792,16 +799,20 @@ function renderLoop(cv){
     const frac=si/streams;
     const baseY=H*.05+frac*H*.9;
     const amp=H*.075*loopScale*(1+Math.sin(si*1.1)*.5);
-    const freq=.55+si*.22;const spd=.013*(si%2===0?1:-1);
+    const freq=.55+si*.22;
+    const spdSign=(si%2===0?1:-1);
     const cmd=cmds[si%cmds.length];
     const unit='#'+cmd.n+' '+cmd.text+'  ';
     const fs=15;ctx.font=FM(fs);const uw=ctx.measureText(unit).width;
     ctx.textBaseline='middle';const bg=streamBg[si];
-    const scroll=(T*58*spd)%uw;
+    /* scroll position from loopT (only changes on drag) */
+    const scroll=(loopT*58*spdSign)%uw;
+    /* Wave phase ALSO tied to loopT — fully static when no interaction */
+    const phase = loopT * spdSign * 7;
     for(let sx=-uw+scroll;sx<W+uw;sx+=uw){
       const relX=sx/W;
-      const y=baseY+Math.sin(relX*Math.PI*freq*2+T*spd*7)*amp;
-      const dy2=Math.cos(relX*Math.PI*freq*2+T*spd*7)*amp*(Math.PI*freq*2/W);
+      const y=baseY+Math.sin(relX*Math.PI*freq*2+phase)*amp;
+      const dy2=Math.cos(relX*Math.PI*freq*2+phase)*amp*(Math.PI*freq*2/W);
       const ang=Math.atan2(dy2,1)*.52;
       ctx.save();ctx.translate(sx,y);ctx.rotate(ang);
       ctx.fillStyle=bg;ctx.fillRect(-2,-fs*.55-3,uw+4,fs+5);
@@ -810,61 +821,24 @@ function renderLoop(cv){
   }
 }
 
-/* ═══ CONTROL — fully static until interaction ═════════════════════
-   Initial state: clean horizontal CONNECTED row of 3 command boxes
-   at unified positions + a horizontal connector line. Stays exactly
-   the same frame after frame until the user drags. */
+/* ═══ CONTROL — clean initial state: ONLY left command stack ═══════
+   No horizontal connector, no extra structure above. The HTML
+   #control-hint-bar provides "Drag to Control" above the video row.
+   First drag flips controlInteracted → chaotic layered traces. */
 function renderControl(cv){
   const r=sz(cv);if(!r)return;const{ctx,W,H}=r;
   ctx.fillStyle='#f0f0ee';ctx.fillRect(0,0,W,H);
   drawBg(ctx,W,H,D.Control);
 
-  const stageBottom=safeStageBottom(H);
   const boxH=CMD_FS+CMD_PY*2+2;
   ctx.font=FM(CMD_FS);ctx.textBaseline='middle';
 
-  if(!controlInteracted){
-    /* INITIAL: a single straight, connected horizontal structure.
-       Three command boxes evenly spaced, joined by a connecting
-       horizontal line. Completely static. */
-    const cmds=D.Control;
-    const labels=cmds.map((c,i)=>({text:'#'+c.n+' '+c.text,bg:CMD_BG[i]}));
-    const widths=labels.map(l=>ctx.measureText(l.text).width+CMD_PX*2);
-    const gap=32;
-    const totalW=widths.reduce((a,b)=>a+b,0)+(widths.length-1)*gap;
-    const yCenter=stageBottom*0.42;
-    let xCursor=(W-totalW)/2;
+  /* Always visible: the unified left command stack */
+  drawUnifiedCommandStack(ctx, W, H, D.Control);
 
-    /* Horizontal connector line behind the boxes */
-    ctx.save();
-    ctx.strokeStyle='rgba(10,10,10,.18)';
-    ctx.lineWidth=1;
-    ctx.beginPath();
-    ctx.moveTo(xCursor-12, yCenter);
-    ctx.lineTo(xCursor+totalW+12, yCenter);
-    ctx.stroke();
-    /* End caps */
-    [xCursor-12, xCursor+totalW+12].forEach(cx=>{
-      ctx.beginPath();ctx.arc(cx, yCenter, 2.2, 0, Math.PI*2);
-      ctx.fillStyle='rgba(10,10,10,.32)';ctx.fill();
-    });
-    ctx.restore();
-
-    /* The three boxes */
-    labels.forEach((l,i)=>{
-      const w=widths[i];
-      ctx.fillStyle=l.bg;
-      ctx.fillRect(xCursor, yCenter-boxH/2, w, boxH);
-      ctx.fillStyle='rgba(10,10,10,.92)';
-      ctx.fillText(l.text, xCursor+CMD_PX, yCenter);
-      xCursor+=w+gap;
-    });
-  } else {
-    /* Unified command stack visible at left as anchor */
-    drawUnifiedCommandStack(ctx, W, H, D.Control);
-
-    /* Chaotic trace layers — no vertical clamp, video row z-index
-       covers any overlap. */
+  if(controlInteracted){
+    /* Chaotic state — layered stacks. No vertical clamp; video row
+       (higher z-index) covers any visual overlap automatically. */
     const visTraces=controlTraces.length>2?controlTraces.slice(2):controlTraces;
     for(const trace of visTraces){
       const{x,y,cmdBoxes,layers}=trace;
@@ -984,9 +958,11 @@ function showDetail(c,cmd){
   vid.autoplay=true;
   vid.muted=false;
   vid.playsInline=true;vid.preload='auto';
-  /* Detail video background matches page bg — no white side boxes */
+  /* Detail video — object-fit:cover removes the letterbox/white sides.
+     The 16:9 room matches the 16:9 video exactly, so cover crops
+     effectively zero pixels while eliminating the side boxes. */
   vid.style.cssText=
-    'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;'+
+    'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;'+
     'display:block;z-index:1;border:none!important;outline:none!important;'+
     'background:#f0f0ee;clip-path:inset(3px 1px 3px 1px);'+
     '-webkit-clip-path:inset(3px 1px 3px 1px)';
@@ -994,8 +970,14 @@ function showDetail(c,cmd){
   vid.addEventListener('loadedmetadata',()=>{vid.currentTime=tStart});
   vid.addEventListener('timeupdate',()=>{if(vid.currentTime>=tEnd)vid.currentTime=tStart});
 
+  /* Detail room smaller (72vw) — matches CSS */
   const rm=$('det-room');
-  rm.style.cssText='border:none!important;outline:none!important;box-shadow:none!important;position:relative;z-index:2;width:82vw;height:calc(82vw*9/16);max-height:78vh;max-width:calc(78vh*16/9);overflow:hidden;background:transparent';
+  rm.style.cssText=
+    'border:none!important;outline:none!important;box-shadow:none!important;'+
+    'position:relative;z-index:2;'+
+    'width:72vw;height:calc(72vw*9/16);'+
+    'max-height:70vh;max-width:calc(70vh*16/9);'+
+    'overflow:hidden;background:transparent';
   rm.innerHTML='';
   rm.appendChild(vid);
   vid.play().catch(()=>{vid.muted=true;vid.play().catch(()=>{})});
@@ -1010,7 +992,6 @@ function showDetail(c,cmd){
   }
   cluster.innerHTML='';
 
-  /* BACK + SOUND — styled to match "Type to Insert" hint via CSS */
   const backBtn=document.createElement('button');
   backBtn.textContent='Back';
   backBtn.onclick=()=>{
@@ -1082,29 +1063,62 @@ function loop(){
   requestAnimationFrame(loop);
 }
 
-/* Cursor color shifts subtly per section, but always strong lime */
-const MAG_COLORS={
-  Align:'rgba(223,255,0,.95)',
-  Input:'rgba(223,255,0,.95)',
-  Select:'rgba(223,255,0,.95)',
-  Loop:'rgba(223,255,0,.95)',
-  Control:'rgba(223,255,0,.95)',
-  Edge:'rgba(223,255,0,.95)',
-  _default:'rgba(223,255,0,.95)'
-};
-let magTargetColor='rgba(223,255,0,.95)';
+/* ─── CURSOR COLOR — pink over lime areas, lime otherwise ──────────
+   Sampling strategy: temporarily hide #mag (so it's not the target),
+   then elementFromPoint(MX,MY) returns the real element under the
+   pointer. Walk ancestors checking for known lime backgrounds:
+   - the top bar (#bar — bright lime)
+   - any element with computed bg matching lime
+   We cache the result and only re-evaluate every few frames to keep
+   CPU usage minimal. */
+function isOverLime(){
+  if(MX<0||MY<0) return false;
+  const mag = $('mag');
+  if(!mag) return false;
+  const prevDisplay = mag.style.display;
+  mag.style.display = 'none';
+  let el = null;
+  try{
+    el = document.elementFromPoint(MX, MY);
+  }catch(_){}
+  mag.style.display = prevDisplay;
+  if(!el) return false;
 
+  /* Walk up to 6 ancestors */
+  let cur = el;
+  for(let i=0;i<6 && cur;i++){
+    if(cur.id === 'bar') return true;
+    /* Read computed background color */
+    try{
+      const bg = getComputedStyle(cur).backgroundColor;
+      /* Lime is rgb(223, 255, 0). Match with tolerance. */
+      const m = bg && bg.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+      if(m){
+        const rr = parseInt(m[1]), gg = parseInt(m[2]), bb = parseInt(m[3]);
+        /* Bright yellow-green family: high R, very high G, very low B */
+        if(rr>200 && gg>240 && bb<60){
+          /* Also check alpha is not 0 */
+          const am = bg.match(/rgba?\(\d+,\s*\d+,\s*\d+,\s*([\d.]+)/);
+          const a = am ? parseFloat(am[1]) : 1;
+          if(a > 0.3) return true;
+        }
+      }
+    }catch(_){}
+    cur = cur.parentElement;
+  }
+  return false;
+}
+
+let magOverLime = false;
 function updateMagColor(){
-  let found=null;
-  cats.forEach(c=>{
-    const cv=$('worm-'+c);if(!cv)return;
-    const r=cv.getBoundingClientRect();
-    if(r.top<window.innerHeight*.5&&r.bottom>window.innerHeight*.5)found=c;
-  });
-  const target=found?MAG_COLORS[found]:MAG_COLORS._default;
-  if(target!==magTargetColor){
-    magTargetColor=target;
-    const mag=$('mag');if(mag)mag.style.borderColor=target;
+  /* Only sample occasionally — every ~6 frames is plenty */
+  const nowOverLime = isOverLime();
+  if(nowOverLime !== magOverLime){
+    magOverLime = nowOverLime;
+    const mag = $('mag');
+    if(mag){
+      mag.style.borderColor = magOverLime ? CURSOR_PINK : CURSOR_LIME;
+    }
   }
 }
 
@@ -1112,7 +1126,6 @@ function renderMag(){
   const mag=$('mag');if(!mag)return;
   if(MX<0){mag.style.left='-200px';return}
   magX+=(MX-magX)*.22;magY+=(MY-magY)*.22;
-  /* New cursor is 42px → center offset 21px */
   mag.style.left=(magX-21)+'px';mag.style.top=(magY-21)+'px';
-  if(FC%30===0)updateMagColor();
+  if(FC%6===0) updateMagColor();
 }
