@@ -15,8 +15,6 @@
 html,body{width:100%;height:100%;overflow:hidden;background:var(--wh);font-family:var(--mon);-webkit-font-smoothing:antialiased;cursor:none}
 .hide{display:none!important}
 
-/* TOP NAV — typography enlarged slightly to feel closer in scale
-   to the command labels (which are 13px). Bumped 10 → 12px. */
 #bar{
   position:fixed;top:0;left:0;right:0;
   height:var(--bar);background:var(--y);
@@ -48,12 +46,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--wh);font-famil
 .cw:hover{background:rgba(0,0,0,.13)}
 .cw.active{background:var(--bk);color:var(--y)}
 
-/* ─── SCROLL CONTAINER — magnetic snap, with height fix ──────────
-   The container sits below the top bar via top: var(--bar).
-   Its visible height is (100vh - bar). Sections MUST match this
-   exact height so scroll-snap can align cleanly. Previously sections
-   were 100vh, which meant they extended 28px past the visible area
-   and caused the lower edge of the video row to be cut off. */
 #sc{
   position:fixed;
   top:var(--bar);
@@ -64,14 +56,16 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--wh);font-famil
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
 }
+/* Temporarily disable snap during the initial scroll restore.
+   The JS adds class .no-snap on #sc, jumps to target, then removes. */
+#sc.no-snap{
+  scroll-snap-type: none !important;
+  scroll-behavior: auto !important;
+}
 #sc::-webkit-scrollbar{display:none}
 #sc{scrollbar-width:none}
 #tall{width:100%;display:flex;flex-direction:column}
 
-/* Sections snap-align start; height matches scroll container.
-   Using 100% (= height of #sc) instead of 100vh fixes the bar offset.
-   On modern browsers we also use the dynamic viewport height as a
-   fallback for the few cases where 100% doesn't propagate cleanly. */
 section{
   width:100%;
   height: calc(100vh - var(--bar));
@@ -101,7 +95,7 @@ section{
 .s-cat::after{content:"";display:none}
 .worm-cv{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2;cursor:none}
 
-/* ─── VIDEO ROW ───────────────────────────────────────────────── */
+/* VIDEO ROW */
 .cat-row{
   position:absolute;
   bottom:0;
@@ -117,11 +111,6 @@ section{
   overflow:visible;
 }
 
-/* ─── INVISIBLE EDGE MASK ────────────────────────────────────────
-   The frame background MUST match the page background so the
-   masked edges blend invisibly. Previously this was near-black
-   which created visible gray box edges around every video.
-   Now it's the exact page background colour. */
 .frame{
   position:relative;
   flex:1;
@@ -132,9 +121,6 @@ section{
   margin:0 0.9%;
 }
 
-/* clip-path crops a few pixels off the displayed area without
-   resizing the element. Combined with a frame background that
-   matches the page, the result is invisible. */
 .frame video{
   position:absolute;
   inset:0;
@@ -151,10 +137,14 @@ section{
 }
 .fr-ph{position:absolute;inset:0;background:var(--wh);z-index:0}
 
-/* ─── DETAIL VIEW — no white side boxes ──────────────────────────
-   .det-room used to introduce a contained frame; the background
-   showed through the letterboxed sides as white. Now the room is
-   transparent and the section itself provides the matching bg. */
+/* ─── DETAIL VIEW ─────────────────────────────────────────────────
+   Two changes vs v18:
+   1. Detail video uses object-fit:cover (was contain) — eliminates
+      the letterboxed white side boxes entirely. The 16:9 .det-room
+      already matches video aspect ratio so cover crops effectively
+      zero pixels — same visible composition, no side boxes.
+   2. .det-room slightly smaller: 72vw (was 82vw). The composition
+      breathes more naturally around the focused video. */
 .s-det{
   background:var(--wh);
   display:flex;align-items:center;justify-content:center;
@@ -164,8 +154,10 @@ section{
 .det-cv{position:absolute;inset:0;z-index:1;pointer-events:none}
 .det-room{
   position:relative;z-index:2;
-  width:82vw;height:calc(82vw*9/16);
-  max-height:78vh;max-width:calc(78vh*16/9);
+  width:72vw;
+  height:calc(72vw*9/16);
+  max-height:70vh;
+  max-width:calc(70vh*16/9);
   overflow:hidden;
   background:transparent;
   border:none!important;outline:none!important;box-shadow:none!important;
@@ -175,7 +167,7 @@ section{
   inset:0;
   width:100%;
   height:100%;
-  object-fit:contain;
+  object-fit:cover;
   display:block;
   z-index:1;
   background:var(--wh);
@@ -192,9 +184,9 @@ section{
 #ld-logo.vis{opacity:.9}
 #ld-pct{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);font-family:var(--mon);font-size:10px;color:var(--bk);opacity:.28;z-index:4;letter-spacing:.08em}
 
-/* ─── CURSOR — stronger lime, thicker, no center crosshair ────────
-   Crosshair in worm canvases removed in JS. The outlined circle
-   below is now the only cursor. Stronger color for visibility. */
+/* ─── CURSOR — strong lime by default; pink when over lime areas ──
+   Color is set dynamically from JS based on what's beneath the cursor.
+   border-color transitions softly so the switch reads as responsive. */
 #mag{
   position:fixed;
   width:42px;
@@ -207,11 +199,10 @@ section{
   background:transparent;
   border:3px solid rgba(223,255,0,.95);
   box-shadow:0 0 0 0.5px rgba(10,10,10,.18);
-  transition:border-color .25s;
+  transition:border-color .18s ease;
 }
 #mag-ring{display:none}
 
-/* STOP button container kept hidden */
 #save-btns{display:none!important}
 
 #input-hint{position:fixed;bottom:48px;left:50%;transform:translateX(-50%);font-family:var(--mon);font-size:10px;letter-spacing:.18em;color:var(--bk);opacity:.3;z-index:500;pointer-events:none}
@@ -220,9 +211,7 @@ section{
 #print-ui{display:flex;gap:10px;align-items:center}
 
 
-/* ─── UNIFIED INTERACTION HINTS — INPUT & CONTROL share style ────
-   Size brought down to 12px to match top nav scale. Pink command
-   box, Monument Grotesk, positioned above the video row. */
+/* INPUT & CONTROL hints */
 #input-hint-bar,
 #control-hint-bar{
   display:none;
@@ -243,11 +232,9 @@ section{
 }
 #s-cat-Input .worm-cv{cursor:text}
 
-/* Poster archive button */
 #btn-poster{font-family:var(--mon);font-size:9px;letter-spacing:.08em;background:rgba(255,204,216,.9);color:rgba(10,10,10,.85);border:none;padding:8px 16px;cursor:pointer;text-transform:uppercase;transition:background .15s,color .15s}
 #btn-poster:hover{background:rgba(255,204,216,1);color:var(--bk)}
 
-/* SOUND BUTTON on frame hover */
 .snd-btn{
   position:absolute;
   bottom:8px;right:8px;
@@ -266,9 +253,6 @@ section{
 }
 .frame:hover .snd-btn{opacity:1;pointer-events:auto}
 
-/* ─── DETAIL UI CLUSTER — Back / Sound matched to "Type to Insert" ──
-   Monument Grotesk, 12px (same as nav and hints), pink command box
-   styling so the buttons belong to the same interface system. */
 .det-ui-cluster{
   position:absolute;
   bottom:44px;
@@ -304,7 +288,7 @@ body.detail-open #save-btns{display:none!important}
 }
 
 
-/* UNIFIED VIDEO COLOR — identical across all panels */
+/* Unified video color */
 .frame video,
 #det-room video {
   filter:
