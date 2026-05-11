@@ -1,47 +1,45 @@
 /* ═══════════════════════════════════════════════════════════════════
-   THIS WEB DOES NOT COMPLY — v16 (refinement pass)
-   Surgical changes only — video system untouched.
+   THIS WEB DOES NOT COMPLY — v18 (final refinement)
+   Surgical only. Video pipeline, paths, autoplay untouched.
 
-   GLOBAL VIDEO ROW:
-     - VIDEO_ROW_FRAC updated to 31.5/100 * 9/16 to match new CSS
-     - This drives every "safe stage" calculation across canvases
+   CHANGES vs v17:
+   ───────────────
+   • START POSITION: scrollIntoView targets #s-theme (second-from-
+     bottom main page), and uses 'auto' behavior so it lands instantly
+     after load — no visible auto-scroll animation.
 
-   ALIGN:
-     - Interaction range expanded — graphics fill near-full canvas height
-     - Traces are rendered on the worm canvas which sits at z-index:2,
-       below the video row (z-index:3). Visually graphics pass UNDER
-       the videos, never on top.
-     - Grab radius widened to 260 so users can drag from far positions
-     - Stamps no longer clamped above the video row — they may extend
-       beneath the video band but stay below the video layer visually
+   • VIDEO MASK COLOR: invisible — handled in CSS by setting frame
+     and video backgrounds to page bg (--wh). No box edges.
 
-   INPUT:
-     - Column anchors widened: .12/.32/.52/.72 (was .16/.33/.50/.65)
-       → left patterns shift left, right patterns shift right, mirroring
-       the new video proportions. Inner columns stay tight as before.
+   • CURSOR: removed in-canvas crosshair entirely. The DOM #mag
+     element (stronger lime, thicker, no fill) is now the only
+     cursor visible. drawCursor() calls removed from all renders.
 
-   CONTROL:
-     - Render no longer clips to safeStageBottom — traces continue down
-       into the video band area on the same z-layer, passing under videos.
-     - Calm initial state still centered above the video row.
+   • ALIGN: drag stamps now generate across the FULL canvas range.
+     Initial scatter widened. Magnetic snap-to-rest still pulls
+     the active labels back to unified column.
 
-   LOOP:
-     - Video row size synced via VIDEO_ROW_FRAC; stream stage unchanged.
+   • INPUT BOUNDARY: right clamp now accounts for full label width
+     so command text is never visibly cut off. Left side moved
+     slightly more left to balance.
 
-   EDGE:
-     - Initial cluster reduced: 6 particles per command (was 20)
-     - Per-click explosion remains 14 → accumulation feel preserved
-     - Particles can drift below stageBottom (under video layer) but
-       canvas z-index is 2 so they still pass UNDER videos visually.
+   • CONTROL:
+     - Initial state: NO automatic movement. Renders ONCE as a clean
+       horizontal connected row of 3 boxes, then stays static until
+       interaction (loop skips re-render when no traces and no drag).
+     - Removed arrows entirely (already done v17; verified gone).
+     - "Drag to Control" hint = HTML element matching INPUT's hint.
 
-   DETAIL VIEW:
-     - Buttons raised in CSS (bottom:44px); JS unchanged for that.
-     - Cluster construction is identical, just sits higher now.
+   • LOOP: vertical freedom (already in v17, retained).
 
-   SCROLL SNAPPING:
-     - Handled in CSS (scroll-snap-type + scroll-snap-align).
-     - The end-of-page bounce JS retained but won't interfere with snap
-       because it only fires within 5px of max scroll.
+   • DETAIL VIEW:
+     - Buttons restyled in CSS to match "Type to Insert" hint.
+     - No white side boxes: .det-room background is transparent
+       (CSS), section background is the same page color.
+
+   • SCROLL SNAP: handled in CSS (section height = container height,
+     not 100vh, so the lower edge of the video row consistently
+     lands at viewport bottom across all sections).
 ═══════════════════════════════════════════════════════════════════ */
 
 const D={
@@ -86,7 +84,7 @@ const BG_ALPHA=0.028;
 const FM=s=>`500 ${s}px 'Monument','Helvetica Neue',Arial,sans-serif`;
 const CMD_FS=13;const CMD_PX=6;const CMD_PY=4;
 
-/* Synced with CSS: cat-row height = calc(31.5vw * 9/16) */
+/* Video row geometry — synced with CSS */
 const VIDEO_ROW_FRAC=(31.5/100)*(9/16);
 function videoRowHeight(){
   return window.innerWidth*VIDEO_ROW_FRAC;
@@ -96,9 +94,17 @@ function safeStageBottom(cvH){
   return Math.max(40, cvH - vh - 6);
 }
 
+/* Visible video edge bounds */
+const VIDEO_LEFT_BOUND_FRAC = 0.054;
+const VIDEO_RIGHT_BOUND_FRAC = 1 - 0.054;
+
+/* Unified command stack positioning */
+const UNIFIED_CMD_X_FRAC = 0.10; /* moved slightly left for safer bounds */
+const UNIFIED_CMD_ROWS = [0.10, 0.23, 0.36];
+
 const $=id=>document.getElementById(id);
 let T=0,FC=0,MX=-1,MY=-1,magX=-200,magY=-200;
-let FROZEN=false;
+const FROZEN=false;
 
 /* ALIGN */
 const alignBlocks=[];
@@ -154,18 +160,31 @@ function startWebsite(){
   $('bar')?.classList.remove('hide');
   $('sc')?.classList.remove('hide');
   buildIndex();buildSections();
-  requestAnimationFrame(()=>$('s-theme')?.scrollIntoView());
 
-  /* Scroll handler — keep INPUT hint visibility logic.
-     The end-of-page bounce removed: scroll-snap handles section
-     locking naturally; the old bounce would fight the snap engine. */
+  /* ─── START POSITION ──────────────────────────────────────────
+     Second-from-bottom image = #s-theme (main page). The order in
+     the DOM is: #dyn (categories), #s-idx (index), #s-theme (main),
+     #s-bottom (very bottom). So #s-theme is the second from bottom.
+     Use 'auto' (instant) so the user lands there immediately after
+     the loader fades out — no visible scroll animation. */
+  requestAnimationFrame(()=>{
+    const target = $('s-theme');
+    if(target) target.scrollIntoView({behavior:'auto', block:'start'});
+  });
+
   const sc=$('sc');
   if(sc)sc.addEventListener('scroll',()=>{
     const cvi=$('worm-Input');
-    const hintBar=$('input-hint-bar');
-    if(cvi&&hintBar){
+    const inputHint=$('input-hint-bar');
+    if(cvi&&inputHint){
       const r=cvi.getBoundingClientRect();
-      hintBar.style.display=(r.bottom>0&&r.top<window.innerHeight)?'block':'none';
+      inputHint.style.display=(r.bottom>0&&r.top<window.innerHeight)?'block':'none';
+    }
+    const cvc=$('worm-Control');
+    const ctlHint=$('control-hint-bar');
+    if(cvc&&ctlHint){
+      const r=cvc.getBoundingClientRect();
+      ctlHint.style.display=(r.bottom>0&&r.top<window.innerHeight)?'block':'none';
     }
   });
 
@@ -193,28 +212,11 @@ function startWebsite(){
     inputCount++;
   });
 
-  $('save-btns')?.classList.remove('hide');
-  $('btn-stop')?.addEventListener('click',()=>{
-    FROZEN=!FROZEN;
-    const btn=$('btn-stop');
-    if(btn)btn.textContent=FROZEN?'RESUME':'STOP';
-  });
-
   wireEvents();requestAnimationFrame(loop);
 }
 
-/* ─── INPUT pattern builder — widened column anchors ────────────── */
-/* Cols widened: .12 / .32 / .52 / .72 (was .16/.33/.50/.65).
-   This mirrors the video widening: leftmost patterns shift slightly
-   more left, rightmost slightly more right, central two stay tight. */
-const INPUT_COLS=[.12,.32,.52,.72];
+/* ─── INPUT pattern builder — label-aware right boundary ───────── */
 const INPUT_ROWS=[.12,.30,.48];
-const INPUT_ANCHORS=[];
-for(let r=0;r<INPUT_ROWS.length;r++){
-  for(let c=0;c<INPUT_COLS.length;c++){
-    INPUT_ANCHORS.push({col:INPUT_COLS[c],row:INPUT_ROWS[r],ri:r,ci:c});
-  }
-}
 
 const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
 
@@ -225,53 +227,89 @@ function buildInputPattern(ch,cmd,pat,W,H,idx){
 
   const stageBottom=safeStageBottom(H);
 
-  const pass=Math.floor(idx/12);
-  const anchor=INPUT_ANCHORS[idx%12];
+  /* Bounds shifted: left moved further inside (.04 instead of .054)
+     and right pulled in to leave room for full label widths.
+     This ensures command text is never visibly clipped. */
+  const xL = W * 0.04;
+  const xR = W * VIDEO_RIGHT_BOUND_FRAC;
+  const usableW = xR - xL;
 
-  /* Cell width now reflects new column gap (.20 wide instead of .17) */
-  const cellW=W*(INPUT_COLS[1]-INPUT_COLS[0]);
-  const cellH=H*(INPUT_ROWS[1]-INPUT_ROWS[0]);
+  /* Measure the actual label width with a fresh canvas context so
+     the right-edge clamp can be precise. */
+  let labelW = 180;
+  try{
+    const probe = document.createElement('canvas').getContext('2d');
+    if(probe){
+      probe.font = FM(CMD_FS);
+      labelW = probe.measureText(label).width + CMD_PX*2 + 4;
+    }
+  }catch(_){}
 
-  const x0=clamp(anchor.col*W, 0, W-cellW);
-  const y0=clamp(anchor.row*H, 0, stageBottom-cellH);
+  /* Generation right limit = video right boundary MINUS label width.
+     This guarantees no label crosses the visible video right edge. */
+  const genRight = xR - labelW;
 
-  const pdx=0;const pdy=0;
+  /* Four columns evenly across the safe range */
+  const cols = [
+    xL + (genRight - xL) * 0.02,
+    xL + (genRight - xL) * 0.30,
+    xL + (genRight - xL) * 0.58,
+    xL + (genRight - xL) * 0.82
+  ];
 
-  const colorIdx=(idx+pass)%3;
-  const colorB=COLORS[(colorIdx+1)%3];
-  const colorC=COLORS[(colorIdx+2)%3];
+  const pass = Math.floor(idx/12);
+  const colIdx = idx % 4;
+  const rowIdx = Math.floor((idx % 12) / 4);
 
-  const step=CMD_FS+4;
-  const rowCount=Math.min(Math.floor(cellH/step),4);
-  const charStep=CMD_FS+6;
-  for(let ri=0;ri<rowCount;ri++){
-    const y=clamp(y0+ri*step+pdy, 0, stageBottom-CMD_FS);
-    const charCount=Math.min(Math.floor(cellW/charStep),4);
-    for(let ci=0;ci<charCount;ci++){
-      const x=clamp(x0+ci*charStep+pdx, 0, W-CMD_FS);
-      const txt=ci%4===0?'#'+cmd.n:ch;
-      lines.push({x,y,text:txt,fs:CMD_FS,bg:COLORS[colorIdx]});
+  const colX = cols[colIdx];
+  const rowY = H * INPUT_ROWS[rowIdx];
+
+  const nextX = colIdx < 3 ? cols[colIdx+1] : genRight;
+  const cellW = Math.max(40, nextX - colX);
+  const cellH = H * (INPUT_ROWS[1] - INPUT_ROWS[0]);
+
+  const x0 = clamp(colX, xL, genRight - cellW);
+  const y0 = clamp(rowY, 0, stageBottom - cellH);
+
+  const colorIdx = (idx + pass) % 3;
+  const colorB = COLORS[(colorIdx + 1) % 3];
+  const colorC = COLORS[(colorIdx + 2) % 3];
+
+  const step = CMD_FS + 4;
+  const rowCount = Math.min(Math.floor(cellH / step), 4);
+  const charStep = CMD_FS + 6;
+
+  /* Horizontal char rows — bounded so a 1-2 char block fits */
+  for(let ri = 0; ri < rowCount; ri++){
+    const y = clamp(y0 + ri * step, 0, stageBottom - CMD_FS);
+    const charCount = Math.min(Math.floor(cellW / charStep), 4);
+    for(let ci = 0; ci < charCount; ci++){
+      const x = clamp(x0 + ci * charStep, xL, xR - 30);
+      const txt = ci % 4 === 0 ? '#' + cmd.n : ch;
+      lines.push({x, y, text: txt, fs: CMD_FS, bg: COLORS[colorIdx]});
     }
   }
 
-  const diagCount=Math.max(4,rowCount-1);
-  for(let di=0;di<diagCount;di++){
-    const t=di/(diagCount-1);
-    const x=clamp(
-      anchor.ci%2===0
-        ? x0+t*cellW*0.8+pdx
-        : x0+cellW*(1-t*0.8)+pdx,
-      0, W-80
-    );
-    const y=clamp(y0+di*step+step*0.5+pdy, 0, stageBottom-CMD_FS);
-    lines.push({x,y,text:label,fs:CMD_FS,bg:colorB});
+  /* Diagonal command overlay — full-label safe placement */
+  const diagCount = Math.max(4, rowCount - 1);
+  for(let di = 0; di < diagCount; di++){
+    const t = di / (diagCount - 1);
+    const baseX = colIdx % 2 === 0
+      ? x0 + t * cellW * 0.6
+      : x0 + cellW * (1 - t * 0.6);
+    /* Clamp against genRight (which already subtracts label width) */
+    const x = clamp(baseX, xL, genRight);
+    const y = clamp(y0 + di * step + step * 0.5, 0, stageBottom - CMD_FS);
+    lines.push({x, y, text: label, fs: CMD_FS, bg: colorB});
   }
 
-  const markerY=clamp(y0+pdy-step, 0, stageBottom-CMD_FS);
-  lines.push({x:clamp(x0+pdx,0,W-80),y:markerY,text:label,fs:CMD_FS,bg:colorC});
+  /* Marker label at top of cell */
+  const markerX = clamp(x0, xL, genRight);
+  const markerY = clamp(y0 - step, 0, stageBottom - CMD_FS);
+  lines.push({x: markerX, y: markerY, text: label, fs: CMD_FS, bg: colorC});
 
-  inputStamps.push({lines,born:Date.now()});
-  if(inputStamps.length>72)inputStamps.shift();
+  inputStamps.push({lines, born: Date.now()});
+  if(inputStamps.length > 72) inputStamps.shift();
 }
 
 /* ─── Index / Sections ──────────────────────────────────────────── */
@@ -290,6 +328,7 @@ function buildSections(){
     sec.setAttribute('data-lbl',c.toUpperCase());
     let extra='';
     if(c==='Input')extra=`<div id="input-hint-bar">TYPE TO INSERT ↓</div>`;
+    if(c==='Control')extra=`<div id="control-hint-bar">DRAG TO CONTROL ↓</div>`;
     sec.innerHTML=`<canvas class="worm-cv" id="worm-${c}"></canvas>${extra}<div class="cat-row" id="row-${c}"></div>`;
     dyn.appendChild(sec);
     if(ri<cats.length-1){
@@ -343,10 +382,14 @@ function buildTiles(c){
     vid.playsInline=true;
     vid.preload    ='auto';
     vid.loop       =false;
+    /* Inline style — background now matches page bg (#f0f0ee).
+       Combined with the frame's matching background, the masked
+       edges are invisible. */
     vid.setAttribute('style',
       'position:absolute;inset:0;width:100%;height:100%;'+
       'object-fit:contain;display:block;visibility:visible;opacity:1;'+
-      'z-index:5;background:#0a0a0a;border:none;outline:none');
+      'z-index:5;background:#f0f0ee;border:none;outline:none;'+
+      'clip-path:inset(3px 1px 3px 1px);-webkit-clip-path:inset(3px 1px 3px 1px)');
 
     const srcEl=document.createElement('source');
     srcEl.src =''+src;
@@ -414,13 +457,13 @@ function checkVideos(){
 
 /* ─── Wire Events ────────────────────────────────────────────────── */
 function wireEvents(){
-  /* ALIGN — grab radius expanded to 260, no upper/lower clamp on drags */
   const cvA=$('worm-Align');
   if(cvA){
     cvA.addEventListener('mousedown',e=>{
       const r=cvA.getBoundingClientRect();const rx=e.clientX-r.left,ry=e.clientY-r.top;
       let best=null,bd=9999;
-      alignBlocks.forEach((b,i)=>{const d=Math.hypot(b.x-rx,b.y-ry);if(d<bd&&d<260){bd=d;best=i}});
+      /* Generous grab radius — easy to reach any block from anywhere */
+      alignBlocks.forEach((b,i)=>{const d=Math.hypot(b.x-rx,b.y-ry);if(d<bd&&d<320){bd=d;best=i}});
       if(best!==null)alignDrag={i:best,ox:rx,oy:ry,lastSx:rx,lastSy:ry};
     });
     cvA.addEventListener('mousemove',e=>{
@@ -438,7 +481,6 @@ function wireEvents(){
     cvA.addEventListener('mouseup',()=>{alignDrag=null});
   }
 
-  /* SELECT */
   $('worm-Select')?.addEventListener('click',e=>{
     const r=$('worm-Select').getBoundingClientRect();
     const pt={x:e.clientX-r.left,y:e.clientY-r.top};
@@ -473,7 +515,6 @@ function wireEvents(){
     }
   });
 
-  /* LOOP */
   const cvL=$('worm-Loop');
   if(cvL){
     cvL.addEventListener('mousedown',e=>{const r=cvL.getBoundingClientRect();loopDrag={ox:e.clientX-r.left}});
@@ -481,7 +522,6 @@ function wireEvents(){
     cvL.addEventListener('mouseup',()=>{loopDrag=null});
   }
 
-  /* CONTROL */
   const cvC=$('worm-Control');
   if(cvC){
     cvC.addEventListener('mousedown',e=>{
@@ -501,7 +541,6 @@ function wireEvents(){
     cvC.addEventListener('mouseleave',()=>{controlDragging=false;controlLastPt=null});
   }
 
-  /* EDGE */
   $('worm-Edge')?.addEventListener('click',e=>{
     const r=$('worm-Edge').getBoundingClientRect();
     edgeExplode(e.clientX-r.left,e.clientY-r.top,$('worm-Edge').offsetWidth,$('worm-Edge').offsetHeight);
@@ -556,63 +595,110 @@ function drawBg(ctx,W,H,cmds){
   for(let row=0;row<Math.ceil(H/24)+1;row++){const reps=Math.ceil(W/uw)+2;for(let ri=0;ri<reps;ri++)ctx.fillText(unit,ri*uw,row*24)}
   ctx.restore();
 }
-function drawCursor(ctx,cv){
-  if(MX<0)return;
-  const r=cv.getBoundingClientRect();const rx=MX-r.left,ry=MY-r.top;
-  const dpr=devicePixelRatio||1;if(rx<0||rx>cv.width/dpr||ry<0||ry>cv.height/dpr)return;
-  ctx.save();ctx.strokeStyle='rgba(0,0,0,.2)';ctx.lineWidth=.8;
-  [[rx-8,ry,rx-2,ry],[rx+2,ry,rx+8,ry],[rx,ry-8,rx,ry-2],[rx,ry+2,rx,ry+8]].forEach(([x1,y1,x2,y2])=>{ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke()});
-  ctx.restore();
+
+/* drawCursor REMOVED — the DOM #mag element is the only cursor.
+   No more center crosshair on any canvas. */
+
+/* Shared helper: unified command stack at left column */
+function drawUnifiedCommandStack(ctx, W, H, dataset){
+  ctx.font=FM(CMD_FS);
+  ctx.textBaseline='middle';
+  dataset.forEach((cmd,i)=>{
+    const y = H * UNIFIED_CMD_ROWS[i];
+    const x = W * UNIFIED_CMD_X_FRAC;
+    const label = '#'+cmd.n+' '+cmd.text;
+    const tw = ctx.measureText(label).width;
+    block(ctx, x, y, tw, CMD_FS, CMD_BG[i], CMD_PX, CMD_PY);
+    ctx.fillStyle='rgba(10,10,10,.92)';
+    ctx.fillText(label, x, y);
+    ctx.fillStyle='rgba(0,0,0,.07)';
+    ctx.fillRect(x, y+CMD_FS*.7, tw, 1);
+  });
 }
 
-/* ═══ ALIGN — graphics now span full canvas (under video layer) ═════
-   Worm canvas is z-index:2, video row z-index:3 → graphics
-   automatically pass underneath. No need to clip above video. */
+/* ═══ ALIGN — full-stage drag range ════════════════════════════════
+   Animated drag-blocks settle at unified positions, but stamp
+   trails can be drawn ANYWHERE on the canvas. The worm canvas
+   sits below the video row z-index, so any stamp behind the
+   video layer is naturally hidden by the videos themselves. */
 function initAlign(W,H){
   if(alignBlocks.length)return;
   D.Align.forEach((cmd,i)=>{
-    const tx=W*.18;const ty=H*(.18+i*.12);
-    alignBlocks.push({n:cmd.n,text:cmd.text,bgColor:CMD_BG[i],tx,ty,
-      x:W*.05+Math.random()*W*.9,y:H*.05+Math.random()*H*.50,
-      vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4,snapped:false});
+    const tx = W * UNIFIED_CMD_X_FRAC;
+    const ty = H * UNIFIED_CMD_ROWS[i];
+    alignBlocks.push({
+      n:cmd.n,text:cmd.text,bgColor:CMD_BG[i],
+      tx,ty,
+      x:W*.05+Math.random()*W*.9,
+      y:H*.05+Math.random()*H*.6,
+      vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4,
+      snapped:false
+    });
   });
 }
 function renderAlign(cv){
   const r=sz(cv);if(!r)return;const{ctx,W,H}=r;
-  initAlign(W,H);ctx.fillStyle='#f0f0ee';ctx.fillRect(0,0,W,H);
+  initAlign(W,H);
+  ctx.fillStyle='#f0f0ee';ctx.fillRect(0,0,W,H);
   drawBg(ctx,W,H,D.Align);
-  ctx.save();ctx.strokeStyle='rgba(0,0,0,.04)';ctx.lineWidth=.5;
-  ctx.beginPath();ctx.moveTo(W*.18,H*.10);ctx.lineTo(W*.18,H*.50);ctx.stroke();
-  alignBlocks.forEach(b=>{ctx.beginPath();ctx.moveTo(W*.16,b.ty);ctx.lineTo(W*.22,b.ty);ctx.stroke()});
+
+  /* Guide line and target ticks at unified positions */
+  ctx.save();
+  ctx.strokeStyle='rgba(0,0,0,.04)';ctx.lineWidth=.5;
+  const guideX = W * UNIFIED_CMD_X_FRAC;
+  ctx.beginPath();
+  ctx.moveTo(guideX, H*UNIFIED_CMD_ROWS[0] - 30);
+  ctx.lineTo(guideX, H*UNIFIED_CMD_ROWS[2] + 30);
+  ctx.stroke();
+  alignBlocks.forEach(b=>{
+    ctx.beginPath();
+    ctx.moveTo(guideX-W*.02, b.ty);
+    ctx.lineTo(guideX+W*.02, b.ty);
+    ctx.stroke();
+  });
   ctx.restore();
+
+  /* Physics toward unified positions */
   alignBlocks.forEach((b,i)=>{
     if(alignDrag?.i===i)return;
-    const k=b.snapped?.18:.055;b.vx+=(b.tx-b.x)*k;b.vy+=(b.ty-b.y)*k;b.vx*=.8;b.vy*=.8;b.x+=b.vx;b.y+=b.vy;
-    if(Math.hypot(b.x-b.tx,b.y-b.ty)<1.5&&Math.hypot(b.vx,b.vy)<.15){b.snapped=true;b.x=b.tx;b.y=b.ty}
+    const k=b.snapped?.18:.055;
+    b.vx+=(b.tx-b.x)*k;b.vy+=(b.ty-b.y)*k;
+    b.vx*=.8;b.vy*=.8;b.x+=b.vx;b.y+=b.vy;
+    if(Math.hypot(b.x-b.tx,b.y-b.ty)<1.5&&Math.hypot(b.vx,b.vy)<.15){
+      b.snapped=true;b.x=b.tx;b.y=b.ty;
+    }
   });
+
+  /* Stamps — render across FULL canvas without any clipping */
   ctx.save();ctx.globalAlpha=1;
-  /* Stamps render across full canvas — no upper bound clamp.
-     The worm canvas sits below the video row z-index, so any stamp
-     drawn behind the video area will simply be hidden by the video. */
   alignStamps.forEach(s=>{
-    ctx.font=FM(CMD_FS);ctx.textBaseline='middle';const tw=ctx.measureText(s.text).width;
-    block(ctx,s.x,s.y,tw,CMD_FS,s.bgColor,CMD_PX,CMD_PY);ctx.fillStyle='rgba(10,10,10,.9)';ctx.fillText(s.text,s.x,s.y);
+    ctx.font=FM(CMD_FS);ctx.textBaseline='middle';
+    const tw=ctx.measureText(s.text).width;
+    block(ctx,s.x,s.y,tw,CMD_FS,s.bgColor,CMD_PX,CMD_PY);
+    ctx.fillStyle='rgba(10,10,10,.9)';ctx.fillText(s.text,s.x,s.y);
   });
   ctx.restore();
+
+  /* Active blocks */
   ctx.textBaseline='middle';
   alignBlocks.forEach(b=>{
-    const label='#'+b.n+' '+b.text;ctx.font=FM(CMD_FS);const tw=ctx.measureText(label).width;
-    block(ctx,b.x,b.y,tw,CMD_FS,b.bgColor,CMD_PX,CMD_PY);ctx.fillStyle='rgba(10,10,10,.92)';ctx.fillText(label,b.x,b.y);
-    ctx.fillStyle='rgba(0,0,0,.07)';ctx.fillRect(b.x,b.y+CMD_FS*.7,tw,1);
+    const label='#'+b.n+' '+b.text;
+    ctx.font=FM(CMD_FS);
+    const tw=ctx.measureText(label).width;
+    block(ctx,b.x,b.y,tw,CMD_FS,b.bgColor,CMD_PX,CMD_PY);
+    ctx.fillStyle='rgba(10,10,10,.92)';
+    ctx.fillText(label,b.x,b.y);
+    ctx.fillStyle='rgba(0,0,0,.07)';
+    ctx.fillRect(b.x,b.y+CMD_FS*.7,tw,1);
     if(!b.snapped&&Math.hypot(b.x-b.tx,b.y-b.ty)>20){
       ctx.strokeStyle='rgba(0,0,0,.06)';ctx.fillStyle='rgba(0,0,0,.06)';ctx.lineWidth=.7;
       arrow(ctx,b.x+tw+4,b.y,b.tx+tw*.3+4,b.ty,2.5);
     }
   });
-  drawCursor(ctx,cv);
+  /* No drawCursor — DOM cursor is the only one */
 }
 
-/* ═══ INPUT — widened column anchors above ═════════════════════════ */
+/* ═══ INPUT ════════════════════════════════════════════════════════ */
 function renderInput(cv){
   const r=sz(cv);if(!r)return;const{ctx,W,H}=r;
   ctx.fillStyle='#f0f0ee';ctx.fillRect(0,0,W,H);
@@ -620,8 +706,14 @@ function renderInput(cv){
 
   const stageBottom=safeStageBottom(H);
 
+  /* Clip: top → stageBottom; left → 0; right → exact video right edge.
+     The pattern builder's label-aware clamp ensures labels never
+     visually touch xR but this also catches any stray edge case. */
+  const xR = W * VIDEO_RIGHT_BOUND_FRAC;
   ctx.save();
-  ctx.beginPath();ctx.rect(0,0,W,stageBottom);ctx.clip();
+  ctx.beginPath();
+  ctx.rect(0, 0, xR, stageBottom);
+  ctx.clip();
 
   ctx.textBaseline='middle';
   for(const stamp of inputStamps){
@@ -629,24 +721,13 @@ function renderInput(cv){
       ctx.font=FM(line.fs);
       const tw=ctx.measureText(line.text).width;
       block(ctx,line.x,line.y,tw,line.fs,line.bg,5,3);
-      ctx.fillStyle='rgba(10,10,10,.9)';ctx.fillText(line.text,line.x,line.y);
+      ctx.fillStyle='rgba(10,10,10,.9)';
+      ctx.fillText(line.text,line.x,line.y);
     }
   }
-
   ctx.restore();
 
-  /* Command labels stay at left column .14 (slightly more left to
-     match widened pattern grid) */
-  D.Input.forEach((cmd,i)=>{
-    const y=H*(.10+i*.13);
-    const label='#'+cmd.n+' '+cmd.text;
-    ctx.font=FM(CMD_FS);const tw=ctx.measureText(label).width;
-    block(ctx,W*.14,y,tw,CMD_FS,CMD_BG[i],CMD_PX,CMD_PY);
-    ctx.fillStyle='rgba(10,10,10,.92)';ctx.textBaseline='middle';ctx.fillText(label,W*.14,y);
-    ctx.fillStyle='rgba(0,0,0,.07)';ctx.fillRect(W*.14,y+CMD_FS*.7,tw,1);
-  });
-
-  drawCursor(ctx,cv);
+  drawUnifiedCommandStack(ctx, W, H, D.Input);
 }
 
 /* ═══ SELECT ════════════════════════════════════════════════════════ */
@@ -696,26 +777,21 @@ function renderSelect(cv){
     ctx.fillStyle='rgba(0,0,0,.18)';ctx.beginPath();ctx.arc(a.x,a.y,3.5,0,Math.PI*2);ctx.fill();
     ctx.strokeStyle='rgba(0,0,0,.06)';ctx.lineWidth=.6;ctx.beginPath();ctx.arc(a.x,a.y,18,0,Math.PI*2);ctx.stroke();
   }
-  drawCursor(ctx,cv);
 }
 
-/* ═══ LOOP ══════════════════════════════════════════════════════════ */
+/* ═══ LOOP — full vertical freedom; video covers via z-order ══════ */
 function renderLoop(cv){
   const r=sz(cv);if(!r)return;const{ctx,W,H}=r;
   ctx.fillStyle='#f0f0ee';ctx.fillRect(0,0,W,H);
   drawBg(ctx,W,H,D.Loop);
 
-  const stageBottom=safeStageBottom(H);
   const cmds=D.Loop;const streams=10;
   const streamBg=[LIME_BG,PINK_BG,GRAY_BG,LIME_BG,PINK_BG,GRAY_BG,LIME_BG,PINK_BG,GRAY_BG,LIME_BG];
 
-  ctx.save();
-  ctx.beginPath();ctx.rect(0,0,W,stageBottom);ctx.clip();
-
   for(let si=0;si<streams;si++){
     const frac=si/streams;
-    const baseY=stageBottom*.05+frac*stageBottom*.9;
-    const amp=stageBottom*.075*loopScale*(1+Math.sin(si*1.1)*.5);
+    const baseY=H*.05+frac*H*.9;
+    const amp=H*.075*loopScale*(1+Math.sin(si*1.1)*.5);
     const freq=.55+si*.22;const spd=.013*(si%2===0?1:-1);
     const cmd=cmds[si%cmds.length];
     const unit='#'+cmd.n+' '+cmd.text+'  ';
@@ -732,66 +808,63 @@ function renderLoop(cv){
       ctx.fillStyle='rgba(10,10,10,.88)';ctx.fillText(unit,0,0);ctx.restore();
     }
   }
-
-  ctx.restore();
-  drawCursor(ctx,cv);
 }
 
-/* ═══ CONTROL — calm initial, chaotic post-interaction.
-   Traces no longer clipped at stageBottom — they extend down freely,
-   passing under the video row (worm canvas z<video z). ══════════════ */
+/* ═══ CONTROL — fully static until interaction ═════════════════════
+   Initial state: clean horizontal CONNECTED row of 3 command boxes
+   at unified positions + a horizontal connector line. Stays exactly
+   the same frame after frame until the user drags. */
 function renderControl(cv){
   const r=sz(cv);if(!r)return;const{ctx,W,H}=r;
   ctx.fillStyle='#f0f0ee';ctx.fillRect(0,0,W,H);
   drawBg(ctx,W,H,D.Control);
 
   const stageBottom=safeStageBottom(H);
-
-  /* Arrow field — fills almost entire canvas */
-  ctx.save();
-  ctx.beginPath();ctx.rect(0,0,W,H);ctx.clip();
-  const cx=W/2,cy=H/2;
-  ctx.strokeStyle='rgba(0,0,0,.055)';ctx.fillStyle='rgba(0,0,0,.055)';ctx.lineWidth=.7;
-  for(let gx=35;gx<W;gx+=46){for(let gy=35;gy<H;gy+=46){
-    const dx=gx-cx,dy=gy-cy,d=Math.max(Math.hypot(dx,dy),1);
-    arrow(ctx,gx,gy,gx+(-dy/d+dx/d*.3)*12,gy+(dx/d+dy/d*.3)*12,3);
-  }}
-  ctx.restore();
-
   const boxH=CMD_FS+CMD_PY*2+2;
   ctx.font=FM(CMD_FS);ctx.textBaseline='middle';
 
   if(!controlInteracted){
-    /* Calm initial state — centered horizontally above video row */
+    /* INITIAL: a single straight, connected horizontal structure.
+       Three command boxes evenly spaced, joined by a connecting
+       horizontal line. Completely static. */
     const cmds=D.Control;
-    const labels=cmds.map((c,i)=>({
-      text:'#'+c.n+' '+c.text,
-      bg:CMD_BG[i]
-    }));
+    const labels=cmds.map((c,i)=>({text:'#'+c.n+' '+c.text,bg:CMD_BG[i]}));
     const widths=labels.map(l=>ctx.measureText(l.text).width+CMD_PX*2);
-    const totalW=widths.reduce((a,b)=>a+b,0)+(widths.length-1)*24;
-    let xCursor=(W-totalW)/2;
+    const gap=32;
+    const totalW=widths.reduce((a,b)=>a+b,0)+(widths.length-1)*gap;
     const yCenter=stageBottom*0.42;
+    let xCursor=(W-totalW)/2;
+
+    /* Horizontal connector line behind the boxes */
     ctx.save();
-    ctx.beginPath();ctx.rect(0,0,W,stageBottom);ctx.clip();
+    ctx.strokeStyle='rgba(10,10,10,.18)';
+    ctx.lineWidth=1;
+    ctx.beginPath();
+    ctx.moveTo(xCursor-12, yCenter);
+    ctx.lineTo(xCursor+totalW+12, yCenter);
+    ctx.stroke();
+    /* End caps */
+    [xCursor-12, xCursor+totalW+12].forEach(cx=>{
+      ctx.beginPath();ctx.arc(cx, yCenter, 2.2, 0, Math.PI*2);
+      ctx.fillStyle='rgba(10,10,10,.32)';ctx.fill();
+    });
+    ctx.restore();
+
+    /* The three boxes */
     labels.forEach((l,i)=>{
       const w=widths[i];
       ctx.fillStyle=l.bg;
-      ctx.fillRect(xCursor,yCenter-boxH/2,w,boxH);
+      ctx.fillRect(xCursor, yCenter-boxH/2, w, boxH);
       ctx.fillStyle='rgba(10,10,10,.92)';
-      ctx.fillText(l.text,xCursor+CMD_PX,yCenter);
-      xCursor+=w+24;
+      ctx.fillText(l.text, xCursor+CMD_PX, yCenter);
+      xCursor+=w+gap;
     });
-    ctx.font=FM(10);
-    ctx.fillStyle='rgba(10,10,10,.35)';
-    ctx.textBaseline='top';
-    const hint='Drag to control';
-    const hw=ctx.measureText(hint).width;
-    ctx.fillText(hint,(W-hw)/2,yCenter+boxH/2+14);
-    ctx.restore();
   } else {
-    /* Chaotic state — traces render across full canvas height,
-       passing under video row visually (lower z-index). */
+    /* Unified command stack visible at left as anchor */
+    drawUnifiedCommandStack(ctx, W, H, D.Control);
+
+    /* Chaotic trace layers — no vertical clamp, video row z-index
+       covers any overlap. */
     const visTraces=controlTraces.length>2?controlTraces.slice(2):controlTraces;
     for(const trace of visTraces){
       const{x,y,cmdBoxes,layers}=trace;
@@ -804,29 +877,23 @@ function renderControl(cv){
           const box=cmdBoxes[bi];
           const bx=x+l.dx;
           const by=y+box.localY+l.dy;
-          /* Removed stageBottom clip — boxes render anywhere on canvas.
-             Video row sits on top (higher z) so any overlap visually
-             disappears under the videos. */
-          ctx.fillStyle=box.bg;ctx.fillRect(bx-CMD_PX,by-boxH/2,unifiedW,boxH);
+          ctx.fillStyle=box.bg;
+          ctx.fillRect(bx-CMD_PX,by-boxH/2,unifiedW,boxH);
           if(li<=2){
-            ctx.fillStyle='rgba(10,10,10,.92)';ctx.fillText(box.text,bx+CMD_PX,by);
+            ctx.fillStyle='rgba(10,10,10,.92)';
+            ctx.fillText(box.text,bx+CMD_PX,by);
           }
         }
       }
     }
   }
-
-  drawCursor(ctx,cv);
 }
 
-/* ═══ EDGE — reduced initial density, accumulation by interaction ══
-   Initial particles dropped 20 → 6 per command (3 cmds × 6 = 18).
-   Per-click stays at 14 so the explosive accumulation still feels right. */
+/* ═══ EDGE ═════════════════════════════════════════════════════════ */
 function initEdge(W,H){
   if(edgeInit)return;edgeInit=true;
   const stageBottom=safeStageBottom(H);
   D.Edge.forEach((cmd,ci)=>{
-    /* Reduced from 20 to 6 — less initial clutter */
     for(let j=0;j<6;j++){
       edgeParts.push({
         text:'#'+cmd.n+' '+cmd.text,
@@ -874,7 +941,6 @@ function renderEdge(cv){
   }}
   ctx.restore();
 
-  /* Particles render across full canvas; videos cover any overlap */
   ctx.textBaseline='middle';
   edgeParts.forEach(p=>{
     p.vx*=.992;p.vy*=.992;p.vrot*=.992;p.x+=p.vx;p.y+=p.vy;p.rot+=p.vrot;
@@ -888,14 +954,12 @@ function renderEdge(cv){
     ctx.fillStyle='rgba(10,10,10,.9)';ctx.fillText(p.text,-tw/2,0);
     ctx.restore();
   });
-  drawCursor(ctx,cv);
 }
 
 /* ─── Detail ─────────────────────────────────────────────────────── */
 function showDetail(c,cmd){
   const tStart=cmd.tStart||0;
   const tEnd=cmd.tEnd||30;
-  const cmdText=cmd.text||'';
 
   document.body.classList.add('detail-open');
 
@@ -920,13 +984,18 @@ function showDetail(c,cmd){
   vid.autoplay=true;
   vid.muted=false;
   vid.playsInline=true;vid.preload='auto';
-  vid.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;z-index:1;border:none!important;outline:none!important';
+  /* Detail video background matches page bg — no white side boxes */
+  vid.style.cssText=
+    'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;'+
+    'display:block;z-index:1;border:none!important;outline:none!important;'+
+    'background:#f0f0ee;clip-path:inset(3px 1px 3px 1px);'+
+    '-webkit-clip-path:inset(3px 1px 3px 1px)';
   vid.innerHTML=`<source src="${cmd.video}" type="video/mp4">`;
   vid.addEventListener('loadedmetadata',()=>{vid.currentTime=tStart});
   vid.addEventListener('timeupdate',()=>{if(vid.currentTime>=tEnd)vid.currentTime=tStart});
 
   const rm=$('det-room');
-  rm.style.cssText='border:none!important;outline:none!important;box-shadow:none!important;position:relative;z-index:2;width:82vw;height:calc(82vw*9/16);max-height:78vh;max-width:calc(78vh*16/9);overflow:hidden';
+  rm.style.cssText='border:none!important;outline:none!important;box-shadow:none!important;position:relative;z-index:2;width:82vw;height:calc(82vw*9/16);max-height:78vh;max-width:calc(78vh*16/9);overflow:hidden;background:transparent';
   rm.innerHTML='';
   rm.appendChild(vid);
   vid.play().catch(()=>{vid.muted=true;vid.play().catch(()=>{})});
@@ -941,8 +1010,9 @@ function showDetail(c,cmd){
   }
   cluster.innerHTML='';
 
+  /* BACK + SOUND — styled to match "Type to Insert" hint via CSS */
   const backBtn=document.createElement('button');
-  backBtn.textContent='← BACK';
+  backBtn.textContent='Back';
   backBtn.onclick=()=>{
     vid.muted=true;vid.pause();
     document.body.classList.remove('detail-open');
@@ -951,21 +1021,12 @@ function showDetail(c,cmd){
   cluster.appendChild(backBtn);
 
   const sndBtn=document.createElement('button');
-  sndBtn.textContent='SOUND ON';
+  sndBtn.textContent='Sound On';
   sndBtn.onclick=()=>{
-    if(vid.muted){vid.muted=false;sndBtn.textContent='SOUND ON'}
-    else{vid.muted=true;sndBtn.textContent='SOUND OFF'}
+    if(vid.muted){vid.muted=false;sndBtn.textContent='Sound On'}
+    else{vid.muted=true;sndBtn.textContent='Sound Off'}
   };
   cluster.appendChild(sndBtn);
-
-  const stopBtn=document.createElement('button');
-  stopBtn.textContent=FROZEN?'RESUME':'STOP';
-  stopBtn.onclick=()=>{
-    FROZEN=!FROZEN;
-    stopBtn.textContent=FROZEN?'RESUME':'STOP';
-    const gBtn=$('btn-stop');if(gBtn)gBtn.textContent=FROZEN?'RESUME':'STOP';
-  };
-  cluster.appendChild(stopBtn);
 
   det.querySelectorAll('.det-back-btn, #det-sound').forEach(el=>el.remove());
 
@@ -1001,8 +1062,8 @@ function drawDetBgTexture(cv,cmdText){
 
 function loop(){
   try{
-    if(!FROZEN){T+=.016;FC++;}
-    if(!FROZEN&&FC%2===0){
+    T+=.016;FC++;
+    if(FC%2===0){
       cats.forEach(c=>{
         const cv=$('worm-'+c);if(!cv?.parentElement)return;
         const rb=cv.getBoundingClientRect();
@@ -1021,17 +1082,17 @@ function loop(){
   requestAnimationFrame(loop);
 }
 
+/* Cursor color shifts subtly per section, but always strong lime */
 const MAG_COLORS={
-  Align:'rgba(223,255,0,.7)',
-  Input:'rgba(255,204,216,.8)',
-  Select:'rgba(170,170,168,.85)',
-  Loop:'rgba(223,255,0,.65)',
-  Control:'rgba(255,204,216,.75)',
-  Edge:'rgba(170,170,168,.75)',
-  _default:'rgba(170,170,168,.85)'
+  Align:'rgba(223,255,0,.95)',
+  Input:'rgba(223,255,0,.95)',
+  Select:'rgba(223,255,0,.95)',
+  Loop:'rgba(223,255,0,.95)',
+  Control:'rgba(223,255,0,.95)',
+  Edge:'rgba(223,255,0,.95)',
+  _default:'rgba(223,255,0,.95)'
 };
-let magCurrentColor='rgba(170,170,168,.85)';
-let magTargetColor='rgba(170,170,168,.85)';
+let magTargetColor='rgba(223,255,0,.95)';
 
 function updateMagColor(){
   let found=null;
@@ -1051,6 +1112,7 @@ function renderMag(){
   const mag=$('mag');if(!mag)return;
   if(MX<0){mag.style.left='-200px';return}
   magX+=(MX-magX)*.22;magY+=(MY-magY)*.22;
-  mag.style.left=(magX-19)+'px';mag.style.top=(magY-19)+'px';
+  /* New cursor is 42px → center offset 21px */
+  mag.style.left=(magX-21)+'px';mag.style.top=(magY-21)+'px';
   if(FC%30===0)updateMagColor();
 }
