@@ -58,12 +58,13 @@ const LIME_BG='rgba(223,255,0,1)';
 const PINK_BG='rgba(255,204,216,1)';
 const GRAY_BG='rgba(210,210,208,1)';
 const CMD_BG=[LIME_BG,PINK_BG,GRAY_BG];
-const BG_ALPHA=0.055;
+const BG_ALPHA=0.028;
 const FM=s=>`500 ${s}px 'Monument','Helvetica Neue',Arial,sans-serif`;
 const CMD_FS=13;const CMD_PX=6;const CMD_PY=4;
 
 const $=id=>document.getElementById(id);
 let T=0,FC=0,MX=-1,MY=-1,magX=-200,magY=-200;
+let FROZEN=false; /* STOP button freezes all moving systems */
 
 /* ALIGN — unchanged */
 const alignBlocks=[];
@@ -94,7 +95,7 @@ let lastVis=0;
 document.addEventListener('DOMContentLoaded',()=>{
   const strip=$('ld-strip'),logo=$('ld-logo'),pct=$('ld-pct'),ldr=$('loader');
   new Image().src='The_first_image_of_the_website_zoom_in.jpg';
-  setTimeout(()=>logo.classList.add('vis'),400);
+  setTimeout(()=>{if(logo)logo.classList.add('vis')},400);
   let sl=0;
   const go=()=>{
     if(++sl>=9){logo.classList.remove('vis');pct.textContent='60%';setTimeout(zoom,300);return}
@@ -165,15 +166,11 @@ function startWebsite(){
   });
 
   $('save-btns')?.classList.remove('hide');
-  $('btn-save')?.addEventListener('click',()=>{
-    let vc=null;
-    cats.forEach(c=>{const el=$('worm-'+c);if(!el)return;const r=el.getBoundingClientRect();if(r.bottom>0&&r.top<window.innerHeight)vc=el});
-    if(vc){const a=document.createElement('a');a.download='trace_'+Date.now()+'.png';a.href=vc.toDataURL('image/png');a.click()}
+  $('btn-stop')?.addEventListener('click',()=>{
+    FROZEN=!FROZEN;
+    const btn=$('btn-stop');
+    if(btn)btn.textContent=FROZEN?'RESUME':'STOP';
   });
-  $('btn-print')?.addEventListener('click',generatePrint);
-  $('btn-poster')?.addEventListener('click',generatePoster);
-  $('print-close')?.addEventListener('click',()=>$('print-overlay')?.classList.add('hide'));
-  $('print-dl')?.addEventListener('click',()=>{const cv=$('print-cv');const a=document.createElement('a');a.download='archive_'+Date.now()+'.png';a.href=cv.toDataURL('image/png');a.click()});
 
   wireEvents();requestAnimationFrame(loop);
 }
@@ -203,8 +200,8 @@ function startWebsite(){
   - Fills the interaction stage completely over time
   - Lime / pink / gray color layering
 */
-const INPUT_COLS=[.06,.31,.56,.78];
-const INPUT_ROWS=[.15,.47,.76];
+const INPUT_COLS=[.16,.33,.50,.65]; /* tighter, away from right edge */
+const INPUT_ROWS=[.16,.45,.74];
 const INPUT_ANCHORS=[];
 for(let r=0;r<INPUT_ROWS.length;r++){
   for(let c=0;c<INPUT_COLS.length;c++){
@@ -234,7 +231,7 @@ function buildInputPattern(ch,cmd,pat,W,H,idx){
   const y0=clamp(anchor.row*H, 0, H-cellH);
   
   /* Pass offset: small diagonal shift per accumulation pass */
-  const pdx=pass*5;const pdy=pass*4;
+  const pdx=0;const pdy=0; /* exact overlap — no pass offset */
   
   const colorIdx=(idx+pass)%3;
   const colorB=COLORS[(colorIdx+1)%3];
@@ -245,12 +242,12 @@ function buildInputPattern(ch,cmd,pat,W,H,idx){
   /* ── PATTERN A: HORIZONTAL DENSE FIELD (ref: blue aaa rows) ── */
   /* Fill cell with tight horizontal rows of the typed char */
   /* This is the "background texture" layer */
-  const rowCount=Math.floor(cellH/step);
-  const charStep=CMD_FS+2;  /* tight horizontal char spacing */
+  const rowCount=Math.min(Math.floor(cellH/step),4); /* reduced height */
+  const charStep=CMD_FS+6;  /* wider spacing = fewer chars, less chaos */
   for(let ri=0;ri<rowCount;ri++){
     const y=clamp(y0+ri*step+pdy, 0, H-CMD_FS);
     /* How many chars fit across the cell */
-    const charCount=Math.floor(cellW/charStep);
+    const charCount=Math.min(Math.floor(cellW/charStep),4); /* 4 chars max per row */
     for(let ci=0;ci<charCount;ci++){
       const x=clamp(x0+ci*charStep+pdx, 0, W-CMD_FS);
       /* Alternate char and short label fragment */
@@ -323,51 +320,100 @@ const VIDEO_CFG={
 };
 
 function buildTiles(c){
-  const row=$('row-'+c);if(!row)return;row.innerHTML='';
-  const cmds=D[c],n=Math.min(cmds.length,3);
-  const cfg=VIDEO_CFG[c]||{src:'./videos/swipetounlock.mp4',ranges:[[0,30],[30,60],[60,90]]};
-  for(let i=0;i<n;i++){
-    const f=document.createElement('div');f.className='frame';
-    const[tStart,tEnd]=cfg.ranges[i]||[0,30];
-    f.dataset.vs=cfg.src;
-    f.dataset.tstart=String(tStart);
-    f.dataset.tend=String(tEnd);
-    f.dataset.loaded='0';
-    /* Sound state per frame */
-    f.dataset.snd='0';
-    f.innerHTML='<div class="fr-ph"></div>';
+  const row=$('row-'+c);
+  if(!row)return;
+  row.innerHTML='';
 
-    /* Sound button — visible on hover via CSS */
-    const sndBtn=document.createElement('button');
-    sndBtn.className='snd-btn';sndBtn.textContent='Sound Off';
-    sndBtn.addEventListener('click',(e)=>{
-      e.stopPropagation();
-      const v=f.querySelector('video');if(!v)return;
-      const on=f.dataset.snd==='1';
-      if(on){v.muted=true;f.dataset.snd='0';sndBtn.textContent='Sound Off'}
-      else{muteAllExcept(f);v.muted=false;f.dataset.snd='1';sndBtn.textContent='Sound On'}
+  const cmds=D[c];
+  if(!cmds||!cmds.length)return;
+  const n=Math.min(cmds.length,3);
+  const cfg=VIDEO_CFG[c]||{src:'./videos/align_withgraphic.mp4',ranges:[[0,30],[30,60],[60,90]]};
+
+  for(let i=0;i<n;i++){
+    const tStart=parseFloat((cfg.ranges[i]||[0,30])[0]);
+    const tEnd  =parseFloat((cfg.ranges[i]||[0,30])[1]);
+    const src   =cfg.src;
+    const cmdText='#'+cmds[i].n+' '+cmds[i].text;
+
+    /* 1. Create frame div */
+    const f=document.createElement('div');
+    f.className='frame';
+    f.dataset.tstart=String(tStart);
+    f.dataset.tend  =String(tEnd);
+    f.dataset.snd   ='0';
+
+    /* Placeholder sits at z-index:0 behind video */
+    const ph=document.createElement('div');
+    ph.className='fr-ph';
+    f.appendChild(ph);
+
+    /* 2. Create video element — fully configured before any append */
+    const vid=document.createElement('video');
+    vid.autoplay   =true;
+    vid.muted      =true;
+    vid.playsInline=true;
+    vid.preload    ='auto';
+    vid.loop       =false;           /* manual loop via timeupdate */
+    /* Explicit style — cannot be overridden by layout issues */
+    vid.setAttribute('style',
+      'position:absolute;inset:0;width:100%;height:100%;'+
+      'object-fit:cover;display:block;visibility:visible;opacity:1;'+
+      'z-index:5;background:#ccc;border:none;outline:none');
+
+    /* Source element */
+    const srcEl=document.createElement('source');
+    srcEl.src =''+src;
+    srcEl.type='video/mp4';
+    vid.appendChild(srcEl);
+
+    /* Segment looping */
+    vid.addEventListener('loadedmetadata',function(){
+      if(this.currentTime<tStart||this.currentTime>tEnd)this.currentTime=tStart;
     });
+    vid.addEventListener('timeupdate',function(){
+      if(this.currentTime>=tEnd-0.05)this.currentTime=tStart;
+    });
+
+    /* 3. Append video to frame — BEFORE any other DOM operations */
+    f.appendChild(vid);
+
+    /* Start playback */
+    vid.play().catch(function(){});
+
+    /* 4. Create sound button */
+    const sndBtn=document.createElement('button');
+    sndBtn.className='snd-btn';
+    sndBtn.textContent='Sound Off';
+    sndBtn.addEventListener('click',function(e){
+      e.stopPropagation();
+      if(f.dataset.snd==='1'){
+        vid.muted=true;f.dataset.snd='0';sndBtn.textContent='Sound Off';
+      }else{
+        muteAllExcept(f);vid.muted=false;f.dataset.snd='1';sndBtn.textContent='Sound On';
+      }
+    });
+
+    /* 5. Append sound button */
     f.appendChild(sndBtn);
 
-    /* Hover: auto-unmute this frame, mute others */
-    f.addEventListener('mouseenter',()=>{
-      const v=f.querySelector('video');if(!v)return;
-      muteAllExcept(f);v.muted=false;f.dataset.snd='1';sndBtn.textContent='Sound On';
+    /* Hover audio */
+    f.addEventListener('mouseenter',function(){
+      muteAllExcept(f);vid.muted=false;f.dataset.snd='1';sndBtn.textContent='Sound On';
     });
-    f.addEventListener('mouseleave',()=>{
-      const v=f.querySelector('video');if(v){v.muted=true}
-      f.dataset.snd='0';sndBtn.textContent='Sound Off';
+    f.addEventListener('mouseleave',function(){
+      vid.muted=true;f.dataset.snd='0';sndBtn.textContent='Sound Off';
     });
 
-    /* Click: enter detail view with segment-based playback */
-    f.addEventListener('click',()=>showDetail(c,{
-      text:'#'+cmds[i].n+' '+cmds[i].text,
-      video:cfg.src,
-      tStart,tEnd
-    }));
+    /* Click → detail view */
+    f.addEventListener('click',function(){
+      showDetail(c,{text:cmdText,video:src,tStart:tStart,tEnd:tEnd});
+    });
+
+    /* 6. Append frame to row — last step */
     row.appendChild(f);
   }
 }
+
 
 /* Mute all frame videos except the given one */
 function muteAllExcept(exceptFrame){
@@ -379,24 +425,14 @@ function muteAllExcept(exceptFrame){
   });
 }
 function checkVideos(){
-  const now=Date.now();if(now-lastVis<500)return;lastVis=now;
+  /* Videos are pre-loaded in buildTiles. This just manages play/pause by visibility. */
+  const now=Date.now();if(now-lastVis<300)return;lastVis=now;
   document.querySelectorAll('.frame').forEach(f=>{
-    const r=f.getBoundingClientRect(),vis=r.bottom>0&&r.top<window.innerHeight;
-    const tStart=parseFloat(f.dataset.tstart||'0');
-    const tEnd=parseFloat(f.dataset.tend||'30');
-    if(vis&&f.dataset.loaded==='0'){
-      f.dataset.loaded='1';
-      const v=document.createElement('video');
-      v.autoplay=true;v.muted=true;v.playsInline=true;v.preload='auto';
-      v.innerHTML=`<source src="${f.dataset.vs}" type="video/mp4">`;
-      /* Time-range looping: when playback reaches tEnd, jump back to tStart */
-      v.addEventListener('loadedmetadata',()=>{v.currentTime=tStart});
-      v.addEventListener('timeupdate',()=>{
-        if(v.currentTime>=tEnd){v.currentTime=tStart}
-      });
-      f.insertBefore(v,f.firstChild);v.play().catch(()=>{});
-    }else if(!vis&&f.dataset.loaded==='1'){f.querySelector('video')?.pause()}
-    else if(vis&&f.dataset.loaded==='1'){const v=f.querySelector('video');if(v?.paused)v.play().catch(()=>{})}
+    const r=f.getBoundingClientRect();
+    const vis=r.bottom>0&&r.top<window.innerHeight;
+    const v=f.querySelector('video');if(!v)return;
+    if(vis&&v.paused)v.play().catch(()=>{});
+    else if(!vis&&!v.paused)v.pause();
   });
 }
 
@@ -504,26 +540,29 @@ function wireEvents(){
   All text is upright. No rotation.
 */
 function addControlTrace(x,y){
-  const cmds=D.Control; /* 3 commands */
-  const boxH=26; /* height of each box */
-  const layerCount=20;
+  const cmds=D.Control;
+  const boxH=CMD_FS+CMD_PY*2+2;
+  /* Intensity: how many traces so far determines visual complexity */
+  const intensity=Math.min(1,controlTraces.length/60); /* 0=lines, 1=full stacks */
+  
+  /* At low intensity: thin horizontal layers (line structure) */
+  /* At high intensity: diagonal stacked blocks (3D effect) */
+  const layerCount=Math.round(2+intensity*18); /* 2 layers → 20 layers */
+  const dxPerLayer=intensity*2.5;  /* 0 → 2.5px diagonal offset */
+  const dyPerLayer=intensity*1.8;  /* 0 → 1.8px vertical offset */
 
-  /* 3 command boxes stacked vertically */
   const cmdBoxes=cmds.map((cmd,i)=>({
     text:'#'+cmd.n+' '+cmd.text,
     bg:CMD_BG[i],
-    /* Stack: box 0 at top, box 1 below, box 2 below that */
     localY:i*boxH
   }));
 
-  /* Layer offset — diagonal for visible side+top surface */
   const layers=[];
   for(let li=0;li<layerCount;li++){
-    layers.push({dx:li*2,dy:li*1.5}); /* consistent diagonal offset */
+    layers.push({dx:li*dxPerLayer,dy:li*dyPerLayer});
   }
 
-  controlTraces.push({x,y,cmdBoxes,layers});
-  /* Cap traces to prevent memory issues */
+  controlTraces.push({x,y,cmdBoxes,layers,intensity});
   if(controlTraces.length>400)controlTraces.shift();
 }
 
@@ -747,7 +786,9 @@ function renderControl(cv){
   const boxH=CMD_FS+CMD_PY*2+2;
   ctx.font=FM(CMD_FS);ctx.textBaseline='middle';
 
-  for(const trace of controlTraces){
+  /* Skip first 2 traces to remove top line density */
+  const visTraces=controlTraces.length>2?controlTraces.slice(2):controlTraces;
+  for(const trace of visTraces){
     const{x,y,cmdBoxes,layers}=trace;
     /* Compute max label width so all boxes share same width */
     const maxW=Math.max(...cmdBoxes.map(b=>ctx.measureText(b.text).width));
@@ -824,32 +865,29 @@ function showDetail(c,cmd){
     $('dyn').prepend(det);
   }
 
-  /* ALIGN: pale background texture canvas with repeated command text */
+  /* ALL categories: pale background command texture in detail view */
   let bgCv=det.querySelector('#det-bg-canvas');
-  if(c==='Align'){
-    if(!bgCv){
-      bgCv=document.createElement('canvas');bgCv.id='det-bg-canvas';
-      det.insertBefore(bgCv,det.firstChild);
-    }
-    bgCv.style.display='block';
-    /* Draw texture after layout */
-    requestAnimationFrame(()=>drawDetBgTexture(bgCv,cmdText));
-  }else if(bgCv){
-    bgCv.style.display='none';
+  if(!bgCv){
+    bgCv=document.createElement('canvas');bgCv.id='det-bg-canvas';
+    det.insertBefore(bgCv,det.firstChild);
   }
+  bgCv.style.display='block';
+  /* Use full command list for the category */
+  const allCmds=D[c]?D[c].map(d=>'#'+d.n+' '+d.text).join('  ·  '):'';
+  requestAnimationFrame(()=>drawDetBgTexture(bgCv,allCmds));
 
   /* Video — segment-based, auto-unmute (audio ON when entering focused view) */
   const vid=document.createElement('video');
   vid.autoplay=true;
   vid.muted=false; /* AUTO-UNMUTE when entering focused view */
   vid.playsInline=true;vid.preload='auto';
-  vid.style.cssText='position:absolute;inset:-2px;width:calc(100% + 4px);height:calc(100% + 4px);object-fit:cover;display:block;z-index:1;border:none!important;outline:none!important;clip-path:inset(2px)';
+  vid.style.cssText='position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;z-index:1;border:none!important;outline:none!important';
   vid.innerHTML=`<source src="${cmd.video}" type="video/mp4">`;
   vid.addEventListener('loadedmetadata',()=>{vid.currentTime=tStart});
   vid.addEventListener('timeupdate',()=>{if(vid.currentTime>=tEnd)vid.currentTime=tStart});
 
   const rm=$('det-room');
-  rm.style.cssText='border:none!important;outline:none!important;box-shadow:none!important;position:relative;z-index:2;width:82vw;height:calc(82vw*9/16);max-height:78vh;max-width:calc(78vh*16/9);overflow:hidden;clip-path:inset(2px)';
+  rm.style.cssText='border:none!important;outline:none!important;box-shadow:none!important;position:relative;z-index:2;width:82vw;height:calc(82vw*9/16);max-height:78vh;max-width:calc(78vh*16/9);overflow:hidden';
   rm.innerHTML='';
   rm.appendChild(vid);
   vid.play().catch(()=>{vid.muted=true;vid.play().catch(()=>{})});
@@ -896,7 +934,7 @@ function drawDetBgTexture(cv,cmdText){
   ctx.clearRect(0,0,W,H);
   /* Extremely pale — feels embedded, not decorative */
   ctx.font=`500 14px 'Monument','Helvetica Neue',Arial,sans-serif`;
-  ctx.fillStyle='rgba(0,0,0,.04)';
+  ctx.fillStyle='rgba(0,0,0,.025)';
   ctx.textBaseline='top';
   const unit=cmdText+'  ';
   const uw=ctx.measureText(unit).width;
@@ -914,126 +952,11 @@ function drawDetBgTexture(cv,cmdText){
 }
 
 /* ─── Print Archive ──────────────────────────────────────────────── */
-function generatePrint(){
-  $('print-overlay')?.classList.remove('hide');
-  const cv=$('print-cv');
-  /* A4 at 600 DPI = 4960×7016px — display at 620×877px (8× scale) */
-  const PW=4960,PH=7016;
-  cv.width=PW;cv.height=PH;cv.style.width='620px';cv.style.height='877px';
-  const ctx=cv.getContext('2d');
-  ctx.fillStyle='#f8f8f6';ctx.fillRect(0,0,PW,PH);
-  const secH=Math.floor(PH/cats.length);
-  cats.forEach((c,ci)=>{
-    const y0=ci*secH;
-    const wormCv=$('worm-'+c);
-    if(!wormCv||wormCv.width===0||wormCv.height===0){ctx.fillStyle='rgba(0,0,0,.015)';ctx.fillRect(0,y0,PW,secH);return}
-    const srcW=wormCv.width,srcH=wormCv.height;
-    const srcAR=srcW/srcH,destAR=PW/secH;
-    let dw,dh,dx,dy;
-    if(srcAR>destAR){dw=PW;dh=PW/srcAR;dx=0;dy=y0+(secH-dh)/2}
-    else{dh=secH;dw=secH*srcAR;dx=(PW-dw)/2;dy=y0}
-    ctx.drawImage(wormCv,0,0,srcW,srcH,dx,dy,dw,dh);
-    ctx.strokeStyle='rgba(0,0,0,.03)';ctx.lineWidth=1;
-    ctx.beginPath();ctx.moveTo(0,y0+secH);ctx.lineTo(PW,y0+secH);ctx.stroke();
-  });
-  ctx.font=`500 56px 'Monument','Helvetica Neue',Arial,sans-serif`;
-  ctx.fillStyle='rgba(0,0,0,.18)';ctx.textBaseline='bottom';
-  ctx.fillText('THIS WEB DOES NOT COMPLY — BEHAVIORAL DISTORTION ARCHIVE',80,PH-32);
-  ctx.fillText(new Date().toISOString().slice(0,10),PW-600,PH-32);
-}
 
-/* ─── Poster Generator (improved composition) ───────────────────── */
-/*
-  Balanced hierarchical composition.
-  Large primary layer (full width), secondary layers overlapping at scale,
-  tertiary fragments at edges. Multiply blend for color interaction.
-  No gray background — transparent canvas.
-*/
-function generatePoster(){
-  $('print-overlay')?.classList.remove('hide');
-  const cv=$('print-cv');
-  /* A3 @ 300dpi = 3508×4961. Display at ~620px wide. */
-  const PW=3508,PH=4961;
-  cv.width=PW;cv.height=PH;cv.style.width='620px';cv.style.height='877px';
-  const ctx=cv.getContext('2d');
-  ctx.fillStyle='#f4f4f2';ctx.fillRect(0,0,PW,PH);
-
-  /*
-    POSTER LOGIC: 10 irregular crop-and-place regions.
-    Each region is a CROP from a worm canvas — no distortion, 1:1 pixels.
-    Regions are placed to fill the poster densely with overlaps.
-    Proportions preserved: we crop a rect from source, place same-size rect on poster.
-    Blend: multiply for color interaction between layers.
-  */
-
-  /* Get all available worm canvases */
-  const worms={};
-  cats.forEach(c=>{
-    const cv=$('worm-'+c);
-    if(cv&&cv.width>0&&cv.height>0)worms[c]=cv;
-  });
-
-  /* 10 crop regions — each defined as:
-     {cat, sx_frac, sy_frac, sw_frac, sh_frac, dx, dy, scale, alpha}
-     sx/sy/sw/sh are fractions of the source canvas.
-     dx/dy are pixel positions on the poster.
-     scale: how much to scale the crop when placing (1.0 = no distortion).
-     
-     We allow uniform scale (both axes same factor) to fill space,
-     but NO non-uniform scaling that would distort proportions.
-  */
-  const regions=[
-    /* Large anchors — top and bottom */
-    {c:'Loop',    sx:.0, sy:.0, sw:.85, sh:.55, dx:0,        dy:0,        sc:1.30, a:.88},
-    {c:'Control', sx:.1, sy:.3, sw:.90, sh:.55, dx:PW*.30,   dy:PH*.08,   sc:1.20, a:.82},
-    /* Mid-level fragments */
-    {c:'Align',   sx:.05,sy:.2, sw:.60, sh:.60, dx:0,        dy:PH*.36,   sc:1.15, a:.85},
-    {c:'Select',  sx:.3, sy:.1, sw:.70, sh:.65, dx:PW*.28,   dy:PH*.30,   sc:1.10, a:.80},
-    {c:'Edge',    sx:.1, sy:.0, sw:.80, sh:.50, dx:PW*.20,   dy:PH*.54,   sc:1.25, a:.82},
-    /* Smaller detail crops */
-    {c:'Input',   sx:.0, sy:.3, sw:.55, sh:.45, dx:0,        dy:PH*.63,   sc:1.05, a:.78},
-    {c:'Loop',    sx:.4, sy:.4, sw:.60, sh:.50, dx:PW*.40,   dy:PH*.60,   sc:1.15, a:.75},
-    {c:'Control', sx:.0, sy:.5, sw:.50, sh:.45, dx:PW*.50,   dy:PH*.75,   sc:1.10, a:.80},
-    /* Bottom fill — make poster feel completely full */
-    {c:'Align',   sx:.2, sy:.5, sw:.75, sh:.45, dx:0,        dy:PH*.80,   sc:1.20, a:.75},
-    {c:'Select',  sx:.0, sy:.0, sw:.45, sh:.55, dx:PW*.55,   dy:PH*.82,   sc:1.10, a:.78},
-  ];
-
-  for(const reg of regions){
-    const src=worms[reg.c];if(!src)continue;
-    const dpr=devicePixelRatio||1;
-    /* Source crop in canvas pixels */
-    const srcCropX=reg.sx*src.width;
-    const srcCropY=reg.sy*src.height;
-    const srcCropW=reg.sw*src.width;
-    const srcCropH=reg.sh*src.height;
-    /* Destination size: uniform scale (preserves proportion) */
-    /* Convert from canvas-pixel source to CSS-pixel equivalent first */
-    const cssW=(srcCropW/dpr)*reg.sc;
-    const cssH=(srcCropH/dpr)*reg.sc;
-    /* Scale back to poster pixels (poster has no dpr scaling) */
-    const destW=cssW;const destH=cssH;
-
-    ctx.save();
-    ctx.globalAlpha=reg.a;
-    ctx.globalCompositeOperation='multiply';
-    ctx.drawImage(src,srcCropX,srcCropY,srcCropW,srcCropH,reg.dx,reg.dy,destW,destH);
-    ctx.restore();
-  }
-
-  /* Footer */
-  ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;
-  ctx.font=`500 48px 'Monument','Helvetica Neue',Arial,sans-serif`;
-  ctx.fillStyle='rgba(0,0,0,.25)';ctx.textBaseline='bottom';
-  ctx.fillText('THIS WEB DOES NOT COMPLY',48,PH-24);
-  ctx.fillText(new Date().toISOString().slice(0,10),PW-520,PH-24);
-}
-
-/* ─── Main Loop ──────────────────────────────────────────────────── */
 function loop(){
   try{
-    T+=.016;FC++;
-    if(FC%2===0){
+    if(!FROZEN){T+=.016;FC++;}
+    if(!FROZEN&&FC%2===0){
       cats.forEach(c=>{
         const cv=$('worm-'+c);if(!cv?.parentElement)return;
         const rb=cv.getBoundingClientRect();
@@ -1051,9 +974,38 @@ function loop(){
   }catch(e){console.warn('loop:',e)}
   requestAnimationFrame(loop);
 }
+/* Cursor color per section — subtle palette reaction */
+const MAG_COLORS={
+  Align:'rgba(223,255,0,.65)',
+  Input:'rgba(255,204,216,.75)',
+  Select:'rgba(210,210,208,.7)',
+  Loop:'rgba(223,255,0,.55)',
+  Control:'rgba(255,204,216,.65)',
+  Edge:'rgba(200,200,198,.6)',
+  _default:'rgba(200,200,198,.55)'
+};
+let magCurrentColor='rgba(200,200,198,.55)';
+let magTargetColor='rgba(200,200,198,.55)';
+
+function updateMagColor(){
+  /* Find which worm canvas is in view */
+  let found=null;
+  cats.forEach(c=>{
+    const cv=$('worm-'+c);if(!cv)return;
+    const r=cv.getBoundingClientRect();
+    if(r.top<window.innerHeight*.5&&r.bottom>window.innerHeight*.5)found=c;
+  });
+  const target=found?MAG_COLORS[found]:MAG_COLORS._default;
+  if(target!==magTargetColor){
+    magTargetColor=target;
+    const mag=$('mag');if(mag)mag.style.borderColor=target;
+  }
+}
+
 function renderMag(){
   const mag=$('mag');if(!mag)return;
   if(MX<0){mag.style.left='-200px';return}
-  magX+=(MX-magX)*.15;magY+=(MY-magY)*.15;
-  mag.style.left=(magX-60)+'px';mag.style.top=(magY-60)+'px';
+  magX+=(MX-magX)*.22;magY+=(MY-magY)*.22;
+  mag.style.left=(magX-14)+'px';mag.style.top=(magY-14)+'px';
+  if(FC%30===0)updateMagColor();
 }
