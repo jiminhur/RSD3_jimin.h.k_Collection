@@ -45,8 +45,21 @@ section{width:100%;position:relative;overflow:hidden}
 .s-cat::after{content:"";display:none}
 .worm-cv{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2;cursor:none}
 
-/* VIDEO ROW — no borders */
-.cat-row{position:absolute;bottom:0;left:0;width:100%;height:calc(33.333vw*9/16);z-index:3;display:flex;justify-content:center;gap:0;padding:0 5%;box-sizing:border-box;overflow:visible}
+/* VIDEO ROW — wider outer lime margins, balanced spacing */
+.cat-row{
+  position:absolute;
+  bottom:0;
+  left:0;
+  width:100%;
+  height:calc(30vw*9/16);
+  z-index:3;
+  display:flex;
+  justify-content:center;
+  gap:0;
+  padding:0 8%;
+  box-sizing:border-box;
+  overflow:visible;
+}
 .frame{position:relative;flex:1;height:100%;overflow:hidden;cursor:pointer;background:var(--gr);margin:0 1%}
 
 .frame video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;visibility:visible;opacity:1;z-index:5;background:#ccc}
@@ -65,13 +78,40 @@ section{width:100%;position:relative;overflow:hidden}
 #ld-logo.vis{opacity:.9}
 #ld-pct{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);font-family:var(--mon);font-size:10px;color:var(--bk);opacity:.28;z-index:4;letter-spacing:.08em}
 
-/* MAGNIFIER */
-#mag{position:fixed;width:28px;height:28px;border-radius:50%;pointer-events:none;z-index:8000;left:-200px;top:-200px;background:transparent;border:1.5px solid rgba(200,200,198,.7);transition:border-color .3s}
+/* MAGNIFIER — larger and thicker outlined circle */
+#mag{
+  position:fixed;
+  width:38px;
+  height:38px;
+  border-radius:50%;
+  pointer-events:none;
+  z-index:8000;
+  left:-200px;
+  top:-200px;
+  background:transparent;
+  border:2.25px solid rgba(170,170,168,.85);
+  transition:border-color .3s;
+}
 #mag-ring{display:none}
 
+/* SYSTEM BUTTONS — pale gray, less aggressive */
 #save-btns{position:fixed;bottom:12px;right:12px;z-index:7000;display:flex;gap:6px}
-.sys-btn{font-family:var(--mon);font-size:9px;letter-spacing:.08em;background:var(--bk);color:var(--y);border:none;padding:8px 16px;cursor:pointer;text-transform:uppercase;transition:background .15s,color .15s}
-.sys-btn:hover{background:var(--y);color:var(--bk)}
+.sys-btn{
+  font-family:var(--mon);
+  font-size:9px;
+  letter-spacing:.08em;
+  background:rgba(220,220,218,.88);
+  color:rgba(10,10,10,.6);
+  border:none;
+  padding:8px 16px;
+  cursor:pointer;
+  text-transform:uppercase;
+  transition:background .15s,color .15s;
+}
+.sys-btn:hover{
+  background:rgba(223,255,0,.85);
+  color:rgba(10,10,10,.9);
+}
 #input-hint{position:fixed;bottom:48px;left:50%;transform:translateX(-50%);font-family:var(--mon);font-size:10px;letter-spacing:.18em;color:var(--bk);opacity:.3;z-index:500;pointer-events:none}
 
 /* PRINT OVERLAY */
@@ -83,17 +123,21 @@ section{width:100%;position:relative;overflow:hidden}
 .sys-btn-ghost:hover{color:var(--y)}
 
 
+/* INPUT HINT — matches command label styling (Monument, same size) */
 #input-hint-bar{
   display:none;
   position:absolute;
-  left:50%;transform:translateX(-50%);
-  bottom:calc(33.333vw*9/16 + 8px);
+  left:50%;
+  transform:translateX(-50%);
+  bottom:calc(30vw*9/16 + 10px);
   z-index:8;
   font-family:'Monument','Helvetica Neue',Arial,sans-serif;
-  font-size:9px;letter-spacing:.06em;
-  color:rgba(10,10,10,.7);
+  font-size:13px;
+  font-weight:500;
+  letter-spacing:.04em;
+  color:rgba(10,10,10,.85);
   background:rgba(255,204,216,.95);
-  padding:5px 14px;
+  padding:4px 10px;
   white-space:nowrap;
   pointer-events:none;
 }
@@ -125,22 +169,38 @@ section{width:100%;position:relative;overflow:hidden}
 /* ── DETAIL: no black border, cleaner layout ── */
 .s-det{border:none!important;outline:none!important}
 .det-room{border:none!important;outline:none!important;box-shadow:none!important}
-#det-back{
-  position:absolute;top:8px;left:8px;z-index:20;
-  font-family:var(--mon);font-size:10px;
-  background:rgba(240,240,238,.92);border:none;
-  padding:5px 12px;cursor:pointer;
-  letter-spacing:.05em;text-transform:uppercase;
+
+/* DETAIL UI CLUSTER — Back / Sound grouped at lower-right */
+.det-ui-cluster{
+  position:absolute;
+  bottom:12px;
+  right:12px;
+  z-index:25;
+  display:flex;
+  gap:6px;
+  align-items:center;
 }
-/* Sound toggle inside detail view */
-#det-sound{
-  position:absolute;bottom:12px;right:12px;z-index:20;
+.det-ui-cluster .sys-btn,
+.det-ui-cluster button{
   font-family:'Monument','Helvetica Neue',Arial,sans-serif;
-  font-size:9px;letter-spacing:.06em;
-  background:rgba(240,240,238,.92);color:rgba(10,10,10,.72);
-  border:none;padding:5px 12px;cursor:pointer;
+  font-size:9px;
+  letter-spacing:.08em;
+  background:rgba(220,220,218,.92);
+  color:rgba(10,10,10,.65);
+  border:none;
+  padding:8px 16px;
+  cursor:pointer;
+  text-transform:uppercase;
+  transition:background .15s,color .15s;
 }
-#det-sound:hover{background:rgba(223,255,0,.9);color:rgba(10,10,10,.9)}
+.det-ui-cluster button:hover{
+  background:rgba(223,255,0,.85);
+  color:rgba(10,10,10,.9);
+}
+
+/* Hide the floating global STOP button when detail view is open
+   — it'll be moved INTO the cluster instead */
+body.detail-open #save-btns{display:none!important}
 
 /* ── Extra outline/border removal for focused video ── */
 .s-det,.det-room,#det-room,#det-room video{
@@ -159,31 +219,21 @@ section{width:100%;position:relative;overflow:hidden}
 
 
 /* ── VIDEO COLOR INTEGRATION ─────────────────────────────────────
-   Subtle filter to match video lime with site lime.
-   Soft-light lime overlay to unify color system.
-   Applied once, cleanly.
+   UNIFIED filter across ALL three panels — no per-panel variation.
+   This ensures consistent lime tone across video 1, 2, 3.
 ────────────────────────────────────────────────────────────────── */
 
-/* Color correction — applied to all frame videos */
+/* Identical color correction for ALL frame videos */
 .frame video,
 #det-room video {
   filter:
-    saturate(1.08)
-    contrast(1.04)
+    saturate(1.06)
+    contrast(1.03)
     brightness(1.02)
     hue-rotate(-3deg);
 }
 
-/* Center panel: slightly cooler / less warm */
-.frame:nth-child(2) video {
-  filter:
-    saturate(0.98)
-    contrast(1.03)
-    brightness(1.01)
-    hue-rotate(-6deg);
-}
-
-/* Lime soft-light overlay on each frame */
+/* Lime soft-light overlay — identical on every frame */
 .frame::after {
   content: "";
   position: absolute;
@@ -209,6 +259,3 @@ section{width:100%;position:relative;overflow:hidden}
   pointer-events: none;
   z-index: 4;
 }
-
-/* Cursor: outlined circle, no fill, reacts to section color */
-/* cursor color set via JS on #mag border-color */
