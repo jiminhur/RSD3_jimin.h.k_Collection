@@ -26,10 +26,10 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--wh);font-famil
 section{width:100%;position:relative;overflow:hidden}
 .sec-bg{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;object-position:center;display:block;z-index:0}
 
-.bottom-sec{height:100vh;position:relative;background:#c8c8c8}
+.bottom-sec{height:100vh;position:relative;background:var(--wh2)}
 .bottom-err{z-index:1;animation:errPulse 3s ease-out infinite}
 @keyframes errPulse{0%{opacity:0}2%{opacity:1}15%{opacity:.95}40%{opacity:.4}70%{opacity:.08}85%{opacity:0}100%{opacity:0}}
-.theme-sec{height:100vh;position:relative;background:var(--wh)}
+.theme-sec{height:100vh;position:relative;background:var(--wh2)}
 
 .idx-sec{min-height:100vh;position:relative;overflow:hidden}
 .idx-ctr{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:5}
@@ -41,7 +41,7 @@ section{width:100%;position:relative;overflow:hidden}
 .idx-sec.inv .idx-d{color:var(--y);opacity:.5}.idx-sec.inv .idx-b{background:var(--y);color:var(--bk)}.idx-sec.inv .idx-b:hover{background:var(--bk);color:var(--y)}
 
 /* CATEGORY SECTIONS */
-.s-cat{height:100vh;background:var(--wh2);position:relative;overflow:hidden;display:flex;flex-direction:column}
+.s-cat{height:100vh;background:#f0f0ee;position:relative;overflow:hidden;display:flex;flex-direction:column}
 .s-cat::after{content:"";display:none}
 .worm-cv{position:absolute;top:0;left:0;width:100%;height:calc(100% - 33.333vw*9/16);z-index:2;cursor:none}
 
@@ -159,6 +159,7 @@ section{width:100%;position:relative;overflow:hidden}
 /* ALIGN detail bg texture canvas */
 #det-bg-canvas{
   position:absolute;inset:0;z-index:0;pointer-events:none;
+  display:none;
 }
 
 /* ── VIDEO COLOR INTEGRATION ──────────────────────────────────────
@@ -172,8 +173,8 @@ section{width:100%;position:relative;overflow:hidden}
 .frame video,
 #det-room video {
   filter:
-    saturate(1.22)
-    contrast(1.06)
+    saturate(1.08)
+    contrast(1.04)
     brightness(1.02)
     hue-rotate(-3deg);
 }
@@ -203,4 +204,46 @@ section{width:100%;position:relative;overflow:hidden}
   opacity: 0.10;
   pointer-events: none;
   z-index: 4;
+}
+
+/* ── VIDEO COLOR INTEGRATION ─────────────────────────────────────
+   Brings video lime and gray into the same graphic system as the site.
+   Filter: slight saturation lift + minimal contrast + hue nudge toward site lime.
+   Overlay: very subtle lime soft-light (opacity .10) — imperceptible on action,
+   visible enough to unify the color temperature.
+   Applied to: thumbnail frames + focused detail room.
+   ─────────────────────────────────────────────────────────────── */
+
+/* Filter on all video elements */
+.frame video,
+#det-room video {
+  filter:
+    saturate(1.08)
+    contrast(1.04)
+    brightness(1.02)
+    hue-rotate(-3deg);
+}
+
+/* Lime soft-light overlay on thumbnail frame wrapper */
+.frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #DFFF00;
+  mix-blend-mode: soft-light;
+  opacity: 0.10;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Same lime overlay on focused detail room */
+.det-room::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #DFFF00;
+  mix-blend-mode: soft-light;
+  opacity: 0.10;
+  pointer-events: none;
+  z-index: 2;
 }
