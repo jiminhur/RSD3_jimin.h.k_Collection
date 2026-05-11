@@ -41,15 +41,15 @@ section{width:100%;position:relative;overflow:hidden}
 .idx-sec.inv .idx-d{color:var(--y);opacity:.5}.idx-sec.inv .idx-b{background:var(--y);color:var(--bk)}.idx-sec.inv .idx-b:hover{background:var(--bk);color:var(--y)}
 
 /* CATEGORY SECTIONS */
-.s-cat{height:100vh;background:#f0f0ee;position:relative;overflow:hidden;display:flex;flex-direction:column}
+.s-cat{height:100vh;background:#f0f0ee;position:relative;overflow:hidden;display:flex;flex-direction:column;margin:0;padding:0}
 .s-cat::after{content:"";display:none}
-.worm-cv{position:absolute;top:0;left:0;width:100%;height:calc(100% - 33.333vw*9/16);z-index:2;cursor:none}
+.worm-cv{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2;cursor:none}
 
 /* VIDEO ROW — no borders */
-.cat-row{position:absolute;bottom:0;left:0;width:100%;height:calc(33.333vw*9/16);z-index:3;overflow:hidden}
-.frame{position:absolute;top:0;width:calc(100% / 3 + 1px);height:100%;overflow:hidden;cursor:pointer;background:var(--gr)}
-.frame:hover{transform:none}
-.frame video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;z-index:1;background:#ccc}
+.cat-row{position:absolute;bottom:0;left:0;width:100%;height:calc(33.333vw*9/16);z-index:3;display:flex;justify-content:center;gap:0;padding:0 5%;box-sizing:border-box;overflow:visible}
+.frame{position:relative;flex:1;height:100%;overflow:hidden;cursor:pointer;background:var(--gr);margin:0 1%}
+
+.frame video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;visibility:visible;opacity:1;z-index:5;background:#ccc}
 .fr-ph{position:absolute;inset:0;background:var(--gr);z-index:0}
 
 .s-det{height:100vh;background:var(--wh);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
@@ -66,8 +66,8 @@ section{width:100%;position:relative;overflow:hidden}
 #ld-pct{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);font-family:var(--mon);font-size:10px;color:var(--bk);opacity:.28;z-index:4;letter-spacing:.08em}
 
 /* MAGNIFIER */
-#mag{position:fixed;width:120px;height:120px;border-radius:50%;pointer-events:none;z-index:8000;left:-200px;top:-200px;overflow:hidden;mix-blend-mode:difference;background:rgba(0,0,0,.88)}
-#mag-ring{position:absolute;inset:0;border-radius:50%;border:1.5px solid rgba(223,255,0,.7);pointer-events:none}
+#mag{position:fixed;width:28px;height:28px;border-radius:50%;pointer-events:none;z-index:8000;left:-200px;top:-200px;background:transparent;border:1.5px solid rgba(200,200,198,.7);transition:border-color .3s}
+#mag-ring{display:none}
 
 #save-btns{position:fixed;bottom:12px;right:12px;z-index:7000;display:flex;gap:6px}
 .sys-btn{font-family:var(--mon);font-size:9px;letter-spacing:.08em;background:var(--bk);color:var(--y);border:none;padding:8px 16px;cursor:pointer;text-transform:uppercase;transition:background .15s,color .15s}
@@ -75,16 +75,13 @@ section{width:100%;position:relative;overflow:hidden}
 #input-hint{position:fixed;bottom:48px;left:50%;transform:translateX(-50%);font-family:var(--mon);font-size:10px;letter-spacing:.18em;color:var(--bk);opacity:.3;z-index:500;pointer-events:none}
 
 /* PRINT OVERLAY */
-#print-overlay{position:fixed;inset:0;z-index:60000;background:rgba(30,30,28,.72);display:flex;align-items:center;justify-content:center}
-#print-room{display:flex;flex-direction:column;align-items:center;gap:16px;max-height:96vh}
-#print-cv{max-height:80vh;max-width:88vw;width:auto;height:auto;display:block}
+#print-overlay{display:none!important}
+#print-room{display:none!important}
+#print-cv{display:none!important}
 #print-ui{display:flex;gap:10px;align-items:center}
 .sys-btn-ghost{font-family:var(--mon);font-size:9px;letter-spacing:.12em;background:rgba(255,204,216,.15);color:rgba(255,204,216,.8);border:none;padding:8px 16px;cursor:pointer;text-transform:uppercase;transition:color .2s,background .2s}
 .sys-btn-ghost:hover{color:var(--y)}
 
-.frame:nth-child(1){left:0}
-.frame:nth-child(2){left:calc(100% / 3);width:calc(100% / 3 + 2px)}
-.frame:nth-child(3){left:calc(200% / 3);right:0;width:auto}
 
 #input-hint-bar{
   display:none;
@@ -151,9 +148,7 @@ section{width:100%;position:relative;overflow:hidden}
   outline:none!important;
   box-shadow:none!important;
 }
-/* Clip 2px inset to hide any edge artifact from video source */
 #det-room video{
-  clip-path:inset(2px);
   object-fit:cover;
 }
 /* ALIGN detail bg texture canvas */
@@ -162,14 +157,14 @@ section{width:100%;position:relative;overflow:hidden}
   display:none;
 }
 
-/* ── VIDEO COLOR INTEGRATION ──────────────────────────────────────
-   Goal: make video feel part of the same graphic system.
-   Filter: nudge saturation/contrast/brightness to match lime system.
-   Overlay: very subtle lime soft-light tint via ::after pseudo-element.
-   Applied to: .frame (preview tiles) and .det-room (focused view).
+
+/* ── VIDEO COLOR INTEGRATION ─────────────────────────────────────
+   Subtle filter to match video lime with site lime.
+   Soft-light lime overlay to unify color system.
+   Applied once, cleanly.
 ────────────────────────────────────────────────────────────────── */
 
-/* Color correction on the video element itself */
+/* Color correction — applied to all frame videos */
 .frame video,
 #det-room video {
   filter:
@@ -179,7 +174,16 @@ section{width:100%;position:relative;overflow:hidden}
     hue-rotate(-3deg);
 }
 
-/* Lime overlay on preview frame — sits above video, below sound button */
+/* Center panel: slightly cooler / less warm */
+.frame:nth-child(2) video {
+  filter:
+    saturate(0.98)
+    contrast(1.03)
+    brightness(1.01)
+    hue-rotate(-6deg);
+}
+
+/* Lime soft-light overlay on each frame */
 .frame::after {
   content: "";
   position: absolute;
@@ -191,10 +195,10 @@ section{width:100%;position:relative;overflow:hidden}
   z-index: 2;
 }
 
-/* Sound button must remain above overlay */
+/* Sound button stays above overlay */
 .snd-btn { z-index: 10; }
 
-/* Lime overlay on focused detail view */
+/* Lime overlay on focused detail room */
 .det-room::after {
   content: "";
   position: absolute;
@@ -206,44 +210,5 @@ section{width:100%;position:relative;overflow:hidden}
   z-index: 4;
 }
 
-/* ── VIDEO COLOR INTEGRATION ─────────────────────────────────────
-   Brings video lime and gray into the same graphic system as the site.
-   Filter: slight saturation lift + minimal contrast + hue nudge toward site lime.
-   Overlay: very subtle lime soft-light (opacity .10) — imperceptible on action,
-   visible enough to unify the color temperature.
-   Applied to: thumbnail frames + focused detail room.
-   ─────────────────────────────────────────────────────────────── */
-
-/* Filter on all video elements */
-.frame video,
-#det-room video {
-  filter:
-    saturate(1.08)
-    contrast(1.04)
-    brightness(1.02)
-    hue-rotate(-3deg);
-}
-
-/* Lime soft-light overlay on thumbnail frame wrapper */
-.frame::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: #DFFF00;
-  mix-blend-mode: soft-light;
-  opacity: 0.10;
-  pointer-events: none;
-  z-index: 2;
-}
-
-/* Same lime overlay on focused detail room */
-.det-room::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background: #DFFF00;
-  mix-blend-mode: soft-light;
-  opacity: 0.10;
-  pointer-events: none;
-  z-index: 2;
-}
+/* Cursor: outlined circle, no fill, reacts to section color */
+/* cursor color set via JS on #mag border-color */
