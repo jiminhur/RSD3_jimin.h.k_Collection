@@ -385,7 +385,7 @@ const VIDEO_CFG={
   Select:{src:'./videos/select_withgraphic.mp4',ranges:[[0,14],[16,47],[48,72]]},
   Loop:{src:'./videos/loop_withgraphic.mp4',ranges:[[0,24],[29,45],[50,69]]},
   Control:{src:'./videos/control_withgraphic.mp4',ranges:[[2,23],[26,50],[55,73]]},
-  Edge:{src:'./videos/edge_withgraphic.mp4',ranges:[[0,20],[21,42],[44,67]]}
+  Edge:{src:'./videos/edge_withgraphic.mp4',ranges:[[0,20],[21,42],[46,70]]}
 };
 
 function buildTiles(c){
