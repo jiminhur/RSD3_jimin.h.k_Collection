@@ -1,37 +1,35 @@
 /* ═══════════════════════════════════════════════════════════════════
-   THIS WEB DOES NOT COMPLY — v19 (FINAL refinement)
+   THIS WEB DOES NOT COMPLY — v20 (micro-refinement pass)
    Surgical only. Video pipeline / paths / autoplay untouched.
 
-   CHANGES vs v18:
+   CHANGES vs v19:
    ───────────────
-   • LANDING FLOW (hardened):
-     scroll-snap is temporarily disabled via #sc.no-snap, then we
-     directly set scrollTop to the second-from-bottom section
-     (#s-theme). Two retries on rAF cover layout-not-ready cases.
-     Snap re-enabled after position is locked.
 
-   • DETAIL VIEW:
-     - Smaller (CSS): .det-room 72vw (was 82), max-height 70vh.
-     - No white side boxes: object-fit:cover on the focused video.
-       The 16:9 room matches the video aspect ratio, so cover crops
-       effectively nothing — identical composition, no letterbox.
+   • CONTROL — open interaction range:
+     - Drag now tracks via document-level pointermove while a CONTROL
+       drag is active, so the cursor can leave the canvas and the
+       drag still continues. This removes the perceived boundary.
+     - Each trace is built with larger footprint (8px box-height
+       multiplier and wider unifiedW padding) so the user sees
+       generous spatial output for every gesture.
+     - No rendering clip — traces fill the full canvas; the video
+       row sits on top via z-index and naturally covers any overlap.
 
-   • ALIGN: drag spread fully unbounded. Initial scatter spans
-     the WHOLE canvas (.04 → .96 horizontally, .04 → .92 vertically).
-     Grab radius 380px. Stamps render with zero clipping.
+   • LOOP — elastic settling:
+     - New state: loopEnergy (0→1), loopRest (alignment phase 0→1).
+     - When idle: loopEnergy decays toward 0, streams pull toward
+       horizontal alignment (low amplitude, no wave). Just barely
+       breathing.
+     - When dragging: drag injects energy (capped at 1), streams
+       gain amplitude + phase advance. Initial wobble is springy.
+     - On release: damped exponential settle. The streams keep
+       wobbling briefly, then quiet down.
 
-   • CURSOR COLOR: dynamic — JS detects via elementFromPoint whether
-     the pointer is over a lime element (#bar / lime backgrounds /
-     idx-b hover lime). When over lime → pink outline; otherwise →
-     lime outline. Smooth CSS transition handles the swap.
-
-   • LOOP: time-base for stream scrolling now tied to a dedicated
-     loopT counter that only advances during active drag. Without
-     interaction the streams sit perfectly still.
-
-   • CONTROL: initial state shows ONLY the unified left command stack
-     + the HTML hint bar. The extra horizontal "connector row" is
-     removed entirely.
+   • TOP NAV active state — IntersectionObserver:
+     - One observer watches all six category sections.
+     - Whichever section has the largest intersection ratio
+       becomes 'active' on its matching .cw button.
+     - Works equally for manual scroll, snap, click navigation.
 ═══════════════════════════════════════════════════════════════════ */
 
 const D={
@@ -76,7 +74,6 @@ const BG_ALPHA=0.028;
 const FM=s=>`500 ${s}px 'Monument','Helvetica Neue',Arial,sans-serif`;
 const CMD_FS=13;const CMD_PX=6;const CMD_PY=4;
 
-/* Cursor colors — strong, no fill, JS swaps via #mag.style.borderColor */
 const CURSOR_LIME='rgba(223,255,0,.95)';
 const CURSOR_PINK='rgba(255,204,216,.95)';
 
@@ -110,14 +107,17 @@ let inputCount=0;
 let selectAnchors=[];
 const selectConns=[];
 
-/* LOOP — dedicated time only advances on active drag */
-let loopScale=1.0,loopDrag=null;
-let loopT=0; /* scrolls streams only when user drags */
+/* LOOP — elastic-settling state */
+let loopScale=1.0;
+let loopDrag=null;       /* drag state pointer */
+let loopEnergy=0;        /* 0=at rest, 1=fully agitated */
+let loopPhase=0;         /* wave phase advances by loopEnergy each frame */
 
 /* CONTROL */
 const controlTraces=[];
 let controlDragging=false,controlLastPt=null;
 let controlInteracted=false;
+let controlCanvasRect=null; /* cached rect for doc-level pointermove */
 
 /* EDGE */
 const edgeParts=[];
@@ -148,23 +148,14 @@ document.addEventListener('DOMContentLoaded',()=>{
   }
 });
 
-/* ─── HARDENED START POSITION ────────────────────────────────────
-   Force scroll to #s-theme (second-from-bottom) with snap disabled.
-   This bypasses scroll-snap's tendency to fight initial positioning.
-   Two rAF retries catch the case where layout isn't measured yet. */
 function lockStartPosition(){
   const sc = $('sc');
   const target = $('s-theme');
   if(!sc || !target) return false;
-  /* Disable snap during the jump */
   sc.classList.add('no-snap');
-  /* offsetTop is measured against the offsetParent (#tall),
-     and #tall is the scroll content of #sc → offsetTop is the
-     correct scroll position. */
   const y = target.offsetTop;
-  if(y < 1) return false; /* layout not ready */
+  if(y < 1) return false;
   sc.scrollTop = y;
-  /* Re-enable snap after the next frame */
   requestAnimationFrame(()=>{
     requestAnimationFrame(()=>{
       sc.classList.remove('no-snap');
@@ -178,8 +169,6 @@ function startWebsite(){
   $('sc')?.classList.remove('hide');
   buildIndex();buildSections();
 
-  /* Try to lock start position immediately, then retry if layout
-     hadn't settled yet. Multiple attempts ensure it lands correctly. */
   requestAnimationFrame(()=>{
     if(!lockStartPosition()){
       requestAnimationFrame(()=>{
@@ -207,7 +196,6 @@ function startWebsite(){
   });
 
   document.querySelectorAll('.cw').forEach(w=>w.addEventListener('click',()=>{
-    document.querySelectorAll('.cw').forEach(x=>x.classList.toggle('active',x.dataset.c===w.dataset.c));
     $('s-cat-'+w.dataset.c)?.scrollIntoView({behavior:'smooth'});
   }));
   document.addEventListener('mousemove',e=>{MX=e.clientX;MY=e.clientY});
@@ -230,7 +218,55 @@ function startWebsite(){
     inputCount++;
   });
 
-  wireEvents();requestAnimationFrame(loop);
+  wireEvents();
+  setupNavObserver();      /* NEW — IntersectionObserver for top nav */
+  requestAnimationFrame(loop);
+}
+
+/* ─── TOP NAV ACTIVE-STATE OBSERVER ───────────────────────────────
+   Watches each .s-cat section. Whichever is most-visible at any
+   moment becomes the 'active' button in the top nav. Works for
+   smooth scroll, snap, and direct clicks alike. */
+function setupNavObserver(){
+  const sc = $('sc');
+  if(!sc) return;
+  const sections = cats
+    .map(c => ({ c, el: $('s-cat-'+c) }))
+    .filter(x => x.el);
+  if(!sections.length) return;
+
+  /* Track visibility ratios; pick the max each tick. */
+  const ratios = new Map();
+  sections.forEach(s => ratios.set(s.c, 0));
+
+  const update = () => {
+    let topC = null, topRatio = 0;
+    ratios.forEach((r, c) => {
+      if(r > topRatio){ topRatio = r; topC = c; }
+    });
+    /* Apply only if a section is genuinely visible.
+       When the user is on the loading splash / index / theme / bottom
+       sections, no .cw should be active. */
+    document.querySelectorAll('.cw').forEach(w => {
+      w.classList.toggle('active', topC && w.dataset.c === topC);
+    });
+  };
+
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      /* dataset is on the section id — extract category name */
+      const id = entry.target.id; /* 's-cat-Align' */
+      const c = id.replace('s-cat-', '');
+      ratios.set(c, entry.intersectionRatio);
+    });
+    update();
+  }, {
+    root: sc,
+    /* Thresholds densely sampled so the most-visible changes promptly */
+    threshold: [0, 0.1, 0.25, 0.4, 0.55, 0.7, 0.85, 1.0]
+  });
+
+  sections.forEach(s => observer.observe(s.el));
 }
 
 /* ─── INPUT pattern builder ─────────────────────────────────────── */
@@ -471,7 +507,6 @@ function wireEvents(){
       const dx=rx-alignDrag.ox,dy=ry-alignDrag.oy;
       const b=alignBlocks[alignDrag.i];
       b.vx=dx*.5;b.vy=dy*.5;b.x+=dx*.7;b.y+=dy*.7;b.snapped=false;
-      /* Stamp drops freely — no bounds check, drag anywhere */
       if(Math.hypot(rx-alignDrag.lastSx,ry-alignDrag.lastSy)>20){
         alignStamps.push({x:b.x,y:b.y,text:'#'+b.n+' '+b.text,bgColor:b.bgColor});
         alignDrag.lastSx=rx;alignDrag.lastSy=ry;
@@ -516,7 +551,7 @@ function wireEvents(){
     }
   });
 
-  /* LOOP — advance loopT ONLY during active drag */
+  /* ─── LOOP — elastic energy injection on drag ─────────────────── */
   const cvL=$('worm-Loop');
   if(cvL){
     cvL.addEventListener('mousedown',e=>{
@@ -530,10 +565,12 @@ function wireEvents(){
       const ry=e.clientY-r.top;
       const dx=rx-loopDrag.ox;
       const dy=ry-loopDrag.oy;
-      /* Horizontal drag adjusts amplitude scale */
-      loopScale=Math.max(.25,Math.min(3,loopScale+dx*.006));
-      /* Drag motion advances stream scroll only while moving */
-      loopT += (dx + dy) * 0.012;
+      /* Drag motion injects ENERGY (not raw position).
+         Magnitude scales with movement; capped at 1.0. */
+      const motion = Math.hypot(dx, dy);
+      loopEnergy = Math.min(1, loopEnergy + motion * 0.008);
+      /* Horizontal drag still adjusts amplitude scale */
+      loopScale = Math.max(.25, Math.min(2.5, loopScale + dx * .004));
       loopDrag.ox=rx;
       loopDrag.oy=ry;
     });
@@ -541,23 +578,54 @@ function wireEvents(){
     cvL.addEventListener('mouseleave',()=>{loopDrag=null});
   }
 
+  /* ─── CONTROL — document-level pointer tracking ───────────────── */
+  /* Mousedown on the canvas STARTS the drag. After that, mousemove
+     is captured at the document level so the drag continues no matter
+     where the cursor goes — much more open feel than canvas-bound. */
   const cvC=$('worm-Control');
   if(cvC){
     cvC.addEventListener('mousedown',e=>{
       controlDragging=true;
       controlInteracted=true;
-      const r=cvC.getBoundingClientRect();
-      controlLastPt={x:e.clientX-r.left,y:e.clientY-r.top};
+      controlCanvasRect = cvC.getBoundingClientRect();
+      controlLastPt={x:e.clientX-controlCanvasRect.left, y:e.clientY-controlCanvasRect.top};
+      /* Add a trace immediately at the down position for instant feedback */
+      addControlTrace(controlLastPt.x, controlLastPt.y);
     });
-    cvC.addEventListener('mousemove',e=>{
-      if(!controlDragging)return;
-      const r=cvC.getBoundingClientRect();const pt={x:e.clientX-r.left,y:e.clientY-r.top};
-      if(controlLastPt&&Math.hypot(pt.x-controlLastPt.x,pt.y-controlLastPt.y)>16){
-        addControlTrace(pt.x,pt.y);controlLastPt=pt;
+
+    /* Document-level move while dragging */
+    document.addEventListener('mousemove', e=>{
+      if(!controlDragging || !controlCanvasRect) return;
+      const pt = {
+        x: e.clientX - controlCanvasRect.left,
+        y: e.clientY - controlCanvasRect.top
+      };
+      if(controlLastPt && Math.hypot(pt.x-controlLastPt.x, pt.y-controlLastPt.y) > 14){
+        addControlTrace(pt.x, pt.y);
+        controlLastPt = pt;
       }
     });
-    cvC.addEventListener('mouseup',()=>{controlDragging=false;controlLastPt=null});
-    cvC.addEventListener('mouseleave',()=>{controlDragging=false;controlLastPt=null});
+
+    /* Release ANYWHERE on document ends the drag */
+    document.addEventListener('mouseup', ()=>{
+      if(controlDragging){
+        controlDragging=false;
+        controlLastPt=null;
+        controlCanvasRect=null;
+      }
+    });
+
+    /* Refresh rect on scroll/resize while dragging */
+    window.addEventListener('resize', ()=>{
+      if(controlDragging){
+        controlCanvasRect = cvC.getBoundingClientRect();
+      }
+    });
+    $('sc')?.addEventListener('scroll', ()=>{
+      if(controlDragging){
+        controlCanvasRect = cvC.getBoundingClientRect();
+      }
+    });
   }
 
   $('worm-Edge')?.addEventListener('click',e=>{
@@ -631,7 +699,7 @@ function drawUnifiedCommandStack(ctx, W, H, dataset){
   });
 }
 
-/* ═══ ALIGN — full canvas drag range, no clipping ══════════════════ */
+/* ═══ ALIGN ════════════════════════════════════════════════════════ */
 function initAlign(W,H){
   if(alignBlocks.length)return;
   D.Align.forEach((cmd,i)=>{
@@ -640,7 +708,6 @@ function initAlign(W,H){
     alignBlocks.push({
       n:cmd.n,text:cmd.text,bgColor:CMD_BG[i],
       tx,ty,
-      /* Initial scatter spans full canvas — nearly the entire stage */
       x: W*.04 + Math.random()*W*.92,
       y: H*.04 + Math.random()*H*.88,
       vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4,
@@ -654,7 +721,6 @@ function renderAlign(cv){
   ctx.fillStyle='#f0f0ee';ctx.fillRect(0,0,W,H);
   drawBg(ctx,W,H,D.Align);
 
-  /* Guide line + ticks at unified positions */
   ctx.save();
   ctx.strokeStyle='rgba(0,0,0,.04)';ctx.lineWidth=.5;
   const guideX = W * UNIFIED_CMD_X_FRAC;
@@ -670,7 +736,6 @@ function renderAlign(cv){
   });
   ctx.restore();
 
-  /* Physics toward unified targets */
   alignBlocks.forEach((b,i)=>{
     if(alignDrag?.i===i)return;
     const k=b.snapped?.18:.055;
@@ -681,7 +746,6 @@ function renderAlign(cv){
     }
   });
 
-  /* Stamps — ZERO clipping, render anywhere on canvas */
   ctx.save();ctx.globalAlpha=1;
   alignStamps.forEach(s=>{
     ctx.font=FM(CMD_FS);ctx.textBaseline='middle';
@@ -691,7 +755,6 @@ function renderAlign(cv){
   });
   ctx.restore();
 
-  /* Active blocks */
   ctx.textBaseline='middle';
   alignBlocks.forEach(b=>{
     const label='#'+b.n+' '+b.text;
@@ -786,45 +849,83 @@ function renderSelect(cv){
   }
 }
 
-/* ═══ LOOP — stream scroll tied to loopT (advances only on drag) ══ */
+/* ═══ LOOP — elastic energy model ══════════════════════════════════
+   loopEnergy is the "agitation level" 0..1. Each frame it decays
+   exponentially. While dragging, energy is injected proportional
+   to motion. Wave amplitude and phase advance scale with energy,
+   so:
+     - At rest → energy=0 → streams sit nearly horizontal (very low amp)
+     - First drag → energy spikes → streams bounce
+     - After release → springs back to stillness
+═══════════════════════════════════════════════════════════════════ */
 function renderLoop(cv){
   const r=sz(cv);if(!r)return;const{ctx,W,H}=r;
   ctx.fillStyle='#f0f0ee';ctx.fillRect(0,0,W,H);
   drawBg(ctx,W,H,D.Loop);
 
-  const cmds=D.Loop;const streams=10;
+  /* Energy decays exponentially when not dragging.
+     The first time the user drags, this springs the streams to life;
+     after release, the streams gently settle back. */
+  if(!loopDrag){
+    loopEnergy *= 0.965; /* ~65 frames to decay 90% — natural settle */
+    if(loopEnergy < 0.0005) loopEnergy = 0;
+  }
+  /* Wave phase advances proportional to current energy.
+     At energy=0, phase doesn't move → fully still.
+     At energy=1, fast advance → animated bounce. */
+  loopPhase += loopEnergy * 0.18;
+
+  /* Visual amplitude blends a base "rest amplitude" (low, just to keep
+     light structure) and an "active amplitude" driven by energy. */
+  const restAmpFactor = 0.012;        /* almost flat at rest */
+  const activeAmpFactor = 0.085;      /* full bounce */
+  const energyEased = loopEnergy * loopEnergy * (3 - 2*loopEnergy); /* smoothstep */
+  const ampFactor = restAmpFactor + (activeAmpFactor - restAmpFactor) * energyEased;
+
+  const cmds=D.Loop;
+  const streams=10;
   const streamBg=[LIME_BG,PINK_BG,GRAY_BG,LIME_BG,PINK_BG,GRAY_BG,LIME_BG,PINK_BG,GRAY_BG,LIME_BG];
 
   for(let si=0;si<streams;si++){
     const frac=si/streams;
     const baseY=H*.05+frac*H*.9;
-    const amp=H*.075*loopScale*(1+Math.sin(si*1.1)*.5);
-    const freq=.55+si*.22;
-    const spdSign=(si%2===0?1:-1);
-    const cmd=cmds[si%cmds.length];
-    const unit='#'+cmd.n+' '+cmd.text+'  ';
-    const fs=15;ctx.font=FM(fs);const uw=ctx.measureText(unit).width;
-    ctx.textBaseline='middle';const bg=streamBg[si];
-    /* scroll position from loopT (only changes on drag) */
-    const scroll=(loopT*58*spdSign)%uw;
-    /* Wave phase ALSO tied to loopT — fully static when no interaction */
-    const phase = loopT * spdSign * 7;
-    for(let sx=-uw+scroll;sx<W+uw;sx+=uw){
-      const relX=sx/W;
-      const y=baseY+Math.sin(relX*Math.PI*freq*2+phase)*amp;
-      const dy2=Math.cos(relX*Math.PI*freq*2+phase)*amp*(Math.PI*freq*2/W);
-      const ang=Math.atan2(dy2,1)*.52;
-      ctx.save();ctx.translate(sx,y);ctx.rotate(ang);
-      ctx.fillStyle=bg;ctx.fillRect(-2,-fs*.55-3,uw+4,fs+5);
-      ctx.fillStyle='rgba(10,10,10,.88)';ctx.fillText(unit,0,0);ctx.restore();
+    const amp = H * ampFactor * loopScale * (1 + Math.sin(si*1.1) * 0.5);
+    const freq = .55 + si*.22;
+    const spdSign = (si%2===0 ? 1 : -1);
+    const cmd = cmds[si % cmds.length];
+    const unit = '#' + cmd.n + ' ' + cmd.text + '  ';
+    const fs = 15;
+    ctx.font = FM(fs);
+    const uw = ctx.measureText(unit).width;
+    ctx.textBaseline = 'middle';
+    const bg = streamBg[si];
+
+    /* Horizontal scroll only happens during energy (drag injects it) */
+    const scroll = (loopPhase * spdSign * 32) % uw;
+    const phase = loopPhase * spdSign;
+
+    for(let sx=-uw+scroll; sx<W+uw; sx+=uw){
+      const relX = sx / W;
+      const y = baseY + Math.sin(relX*Math.PI*freq*2 + phase) * amp;
+      const dy2 = Math.cos(relX*Math.PI*freq*2 + phase) * amp * (Math.PI*freq*2/W);
+      const ang = Math.atan2(dy2, 1) * 0.52;
+      ctx.save();
+      ctx.translate(sx, y);
+      ctx.rotate(ang);
+      ctx.fillStyle = bg;
+      ctx.fillRect(-2, -fs*.55-3, uw+4, fs+5);
+      ctx.fillStyle = 'rgba(10,10,10,.88)';
+      ctx.fillText(unit, 0, 0);
+      ctx.restore();
     }
   }
 }
 
-/* ═══ CONTROL — clean initial state: ONLY left command stack ═══════
-   No horizontal connector, no extra structure above. The HTML
-   #control-hint-bar provides "Drag to Control" above the video row.
-   First drag flips controlInteracted → chaotic layered traces. */
+/* ═══ CONTROL — no clipping, traces render anywhere ═════════════════
+   Stamp positions come from document-level pointer tracking, so
+   the user can drag right off the canvas, across the screen, even
+   below the video row — and traces continue being deposited.
+   The video row's higher z-index covers any overlap automatically. */
 function renderControl(cv){
   const r=sz(cv);if(!r)return;const{ctx,W,H}=r;
   ctx.fillStyle='#f0f0ee';ctx.fillRect(0,0,W,H);
@@ -833,12 +934,11 @@ function renderControl(cv){
   const boxH=CMD_FS+CMD_PY*2+2;
   ctx.font=FM(CMD_FS);ctx.textBaseline='middle';
 
-  /* Always visible: the unified left command stack */
   drawUnifiedCommandStack(ctx, W, H, D.Control);
 
   if(controlInteracted){
-    /* Chaotic state — layered stacks. No vertical clamp; video row
-       (higher z-index) covers any visual overlap automatically. */
+    /* NO clip rectangle — traces render across full canvas H.
+       Drag positions captured at document level can fall anywhere. */
     const visTraces=controlTraces.length>2?controlTraces.slice(2):controlTraces;
     for(const trace of visTraces){
       const{x,y,cmdBoxes,layers}=trace;
@@ -958,9 +1058,6 @@ function showDetail(c,cmd){
   vid.autoplay=true;
   vid.muted=false;
   vid.playsInline=true;vid.preload='auto';
-  /* Detail video — object-fit:cover removes the letterbox/white sides.
-     The 16:9 room matches the 16:9 video exactly, so cover crops
-     effectively zero pixels while eliminating the side boxes. */
   vid.style.cssText=
     'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;'+
     'display:block;z-index:1;border:none!important;outline:none!important;'+
@@ -970,7 +1067,6 @@ function showDetail(c,cmd){
   vid.addEventListener('loadedmetadata',()=>{vid.currentTime=tStart});
   vid.addEventListener('timeupdate',()=>{if(vid.currentTime>=tEnd)vid.currentTime=tStart});
 
-  /* Detail room smaller (72vw) — matches CSS */
   const rm=$('det-room');
   rm.style.cssText=
     'border:none!important;outline:none!important;box-shadow:none!important;'+
@@ -1063,14 +1159,6 @@ function loop(){
   requestAnimationFrame(loop);
 }
 
-/* ─── CURSOR COLOR — pink over lime areas, lime otherwise ──────────
-   Sampling strategy: temporarily hide #mag (so it's not the target),
-   then elementFromPoint(MX,MY) returns the real element under the
-   pointer. Walk ancestors checking for known lime backgrounds:
-   - the top bar (#bar — bright lime)
-   - any element with computed bg matching lime
-   We cache the result and only re-evaluate every few frames to keep
-   CPU usage minimal. */
 function isOverLime(){
   if(MX<0||MY<0) return false;
   const mag = $('mag');
@@ -1084,20 +1172,15 @@ function isOverLime(){
   mag.style.display = prevDisplay;
   if(!el) return false;
 
-  /* Walk up to 6 ancestors */
   let cur = el;
   for(let i=0;i<6 && cur;i++){
     if(cur.id === 'bar') return true;
-    /* Read computed background color */
     try{
       const bg = getComputedStyle(cur).backgroundColor;
-      /* Lime is rgb(223, 255, 0). Match with tolerance. */
       const m = bg && bg.match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)/);
       if(m){
         const rr = parseInt(m[1]), gg = parseInt(m[2]), bb = parseInt(m[3]);
-        /* Bright yellow-green family: high R, very high G, very low B */
         if(rr>200 && gg>240 && bb<60){
-          /* Also check alpha is not 0 */
           const am = bg.match(/rgba?\(\d+,\s*\d+,\s*\d+,\s*([\d.]+)/);
           const a = am ? parseFloat(am[1]) : 1;
           if(a > 0.3) return true;
@@ -1111,7 +1194,6 @@ function isOverLime(){
 
 let magOverLime = false;
 function updateMagColor(){
-  /* Only sample occasionally — every ~6 frames is plenty */
   const nowOverLime = isOverLime();
   if(nowOverLime !== magOverLime){
     magOverLime = nowOverLime;
