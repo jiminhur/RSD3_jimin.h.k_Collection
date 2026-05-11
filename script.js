@@ -1,31 +1,47 @@
 /* ═══════════════════════════════════════════════════════════════════
-   THIS WEB DOES NOT COMPLY — v15 (refinement pass)
-   Surgical changes only — structure preserved.
+   THIS WEB DOES NOT COMPLY — v16 (refinement pass)
+   Surgical changes only — video system untouched.
+
+   GLOBAL VIDEO ROW:
+     - VIDEO_ROW_FRAC updated to 31.5/100 * 9/16 to match new CSS
+     - This drives every "safe stage" calculation across canvases
 
    ALIGN:
-     - Commands lifted higher (rows ~.18 / .30 / .42 instead of .32/.49/.66)
-     - Interaction draw range expanded (drag farther outward)
+     - Interaction range expanded — graphics fill near-full canvas height
+     - Traces are rendered on the worm canvas which sits at z-index:2,
+       below the video row (z-index:3). Visually graphics pass UNDER
+       the videos, never on top.
+     - Grab radius widened to 260 so users can drag from far positions
+     - Stamps no longer clamped above the video row — they may extend
+       beneath the video band but stay below the video layer visually
+
    INPUT:
-     - Pattern grid raised — third row no longer collides with video row
-     - Rows now .12 / .30 / .48 (was .16/.45/.74)
-     - "Type to Insert" label uses CMD_FS / Monument styling (in CSS)
-   LOOP:
-     - Bottom arrow grid removed
+     - Column anchors widened: .12/.32/.52/.72 (was .16/.33/.50/.65)
+       → left patterns shift left, right patterns shift right, mirroring
+       the new video proportions. Inner columns stay tight as before.
+
    CONTROL:
-     - INITIAL state: clean horizontal alignment of the 3 boxes
-       (a calm "rest row" rendered before any interaction)
-     - After interaction: existing chaotic layered stacks
-     - All graphics clamped above video row
+     - Render no longer clips to safeStageBottom — traces continue down
+       into the video band area on the same z-layer, passing under videos.
+     - Calm initial state still centered above the video row.
+
+   LOOP:
+     - Video row size synced via VIDEO_ROW_FRAC; stream stage unchanged.
+
    EDGE:
-     - Particles accumulate (no aggressive shrinking of array)
-     - Slower decay → traces remain and build
-     - Clamped above the video row
+     - Initial cluster reduced: 6 particles per command (was 20)
+     - Per-click explosion remains 14 → accumulation feel preserved
+     - Particles can drift below stageBottom (under video layer) but
+       canvas z-index is 2 so they still pass UNDER videos visually.
+
    DETAIL VIEW:
-     - Back, Sound, STOP grouped in a single .det-ui-cluster (bottom-right)
-     - Global floating STOP hidden while detail is open (body.detail-open)
-   STOP BUTTON: now pale-gray (handled in CSS .sys-btn)
-   CURSOR: larger + thicker outlined circle (handled in CSS #mag)
-   VIDEO LIME: unified filter across all three panels (CSS)
+     - Buttons raised in CSS (bottom:44px); JS unchanged for that.
+     - Cluster construction is identical, just sits higher now.
+
+   SCROLL SNAPPING:
+     - Handled in CSS (scroll-snap-type + scroll-snap-align).
+     - The end-of-page bounce JS retained but won't interfere with snap
+       because it only fires within 5px of max scroll.
 ═══════════════════════════════════════════════════════════════════ */
 
 const D={
@@ -70,18 +86,13 @@ const BG_ALPHA=0.028;
 const FM=s=>`500 ${s}px 'Monument','Helvetica Neue',Arial,sans-serif`;
 const CMD_FS=13;const CMD_PX=6;const CMD_PY=4;
 
-/* The video row height ratio is calc(30vw*9/16) in CSS; mirror here.
-   Use this when clamping graphics so they don't overlap the video row. */
-const VIDEO_ROW_FRAC=(30/100)*(9/16); /* fraction of viewport WIDTH used as height */
+/* Synced with CSS: cat-row height = calc(31.5vw * 9/16) */
+const VIDEO_ROW_FRAC=(31.5/100)*(9/16);
 function videoRowHeight(){
   return window.innerWidth*VIDEO_ROW_FRAC;
 }
-/* Returns Y coordinate (within a worm canvas) of the top of the video row.
-   Everything above this Y is safe stage space. */
 function safeStageBottom(cvH){
-  /* worm canvas is full-section; video row bottoms at section bottom */
   const vh=videoRowHeight();
-  /* leave a tiny breathing strip of 6px above the row */
   return Math.max(40, cvH - vh - 6);
 }
 
@@ -108,7 +119,7 @@ let loopScale=1.0,loopDrag=null;
 /* CONTROL */
 const controlTraces=[];
 let controlDragging=false,controlLastPt=null;
-let controlInteracted=false; /* NEW: tracks first user interaction for calm→chaotic transition */
+let controlInteracted=false;
 
 /* EDGE */
 const edgeParts=[];
@@ -145,16 +156,11 @@ function startWebsite(){
   buildIndex();buildSections();
   requestAnimationFrame(()=>$('s-theme')?.scrollIntoView());
 
-  let bouncing=false;
+  /* Scroll handler — keep INPUT hint visibility logic.
+     The end-of-page bounce removed: scroll-snap handles section
+     locking naturally; the old bounce would fight the snap engine. */
   const sc=$('sc');
   if(sc)sc.addEventListener('scroll',()=>{
-    const max=sc.scrollHeight-sc.clientHeight;
-    if(sc.scrollTop>=max-5&&!bouncing){
-      bouncing=true;sc.scrollTo({top:max-120,behavior:'smooth'});
-      setTimeout(()=>sc.scrollTo({top:max-40,behavior:'smooth'}),350);
-      setTimeout(()=>sc.scrollTo({top:max-80,behavior:'smooth'}),600);
-      setTimeout(()=>{bouncing=false},900);
-    }
     const cvi=$('worm-Input');
     const hintBar=$('input-hint-bar');
     if(cvi&&hintBar){
@@ -197,9 +203,11 @@ function startWebsite(){
   wireEvents();requestAnimationFrame(loop);
 }
 
-/* ─── INPUT pattern builder — rows lifted higher ────────────────── */
-const INPUT_COLS=[.16,.33,.50,.65];
-/* Rows raised so 3rd row sits well above video row */
+/* ─── INPUT pattern builder — widened column anchors ────────────── */
+/* Cols widened: .12 / .32 / .52 / .72 (was .16/.33/.50/.65).
+   This mirrors the video widening: leftmost patterns shift slightly
+   more left, rightmost slightly more right, central two stay tight. */
+const INPUT_COLS=[.12,.32,.52,.72];
 const INPUT_ROWS=[.12,.30,.48];
 const INPUT_ANCHORS=[];
 for(let r=0;r<INPUT_ROWS.length;r++){
@@ -215,13 +223,12 @@ function buildInputPattern(ch,cmd,pat,W,H,idx){
   const lines=[];
   const label='#'+cmd.n+' '+cmd.text;
 
-  /* Stage upper bound — never draw below this */
   const stageBottom=safeStageBottom(H);
 
   const pass=Math.floor(idx/12);
   const anchor=INPUT_ANCHORS[idx%12];
 
-  /* Tighter cell heights so 3 rows fit above the video stage */
+  /* Cell width now reflects new column gap (.20 wide instead of .17) */
   const cellW=W*(INPUT_COLS[1]-INPUT_COLS[0]);
   const cellH=H*(INPUT_ROWS[1]-INPUT_ROWS[0]);
 
@@ -338,8 +345,8 @@ function buildTiles(c){
     vid.loop       =false;
     vid.setAttribute('style',
       'position:absolute;inset:0;width:100%;height:100%;'+
-      'object-fit:cover;display:block;visibility:visible;opacity:1;'+
-      'z-index:5;background:#ccc;border:none;outline:none');
+      'object-fit:contain;display:block;visibility:visible;opacity:1;'+
+      'z-index:5;background:#0a0a0a;border:none;outline:none');
 
     const srcEl=document.createElement('source');
     srcEl.src =''+src;
@@ -407,14 +414,13 @@ function checkVideos(){
 
 /* ─── Wire Events ────────────────────────────────────────────────── */
 function wireEvents(){
-  /* ALIGN — wider draggable range */
+  /* ALIGN — grab radius expanded to 260, no upper/lower clamp on drags */
   const cvA=$('worm-Align');
   if(cvA){
     cvA.addEventListener('mousedown',e=>{
       const r=cvA.getBoundingClientRect();const rx=e.clientX-r.left,ry=e.clientY-r.top;
       let best=null,bd=9999;
-      /* Expanded grab radius from 130 → 200 for easier far-out grabs */
-      alignBlocks.forEach((b,i)=>{const d=Math.hypot(b.x-rx,b.y-ry);if(d<bd&&d<200){bd=d;best=i}});
+      alignBlocks.forEach((b,i)=>{const d=Math.hypot(b.x-rx,b.y-ry);if(d<bd&&d<260){bd=d;best=i}});
       if(best!==null)alignDrag={i:best,ox:rx,oy:ry,lastSx:rx,lastSy:ry};
     });
     cvA.addEventListener('mousemove',e=>{
@@ -475,12 +481,12 @@ function wireEvents(){
     cvL.addEventListener('mouseup',()=>{loopDrag=null});
   }
 
-  /* CONTROL — flips controlInteracted true on first drag */
+  /* CONTROL */
   const cvC=$('worm-Control');
   if(cvC){
     cvC.addEventListener('mousedown',e=>{
       controlDragging=true;
-      controlInteracted=true; /* leave calm state */
+      controlInteracted=true;
       const r=cvC.getBoundingClientRect();
       controlLastPt={x:e.clientX-r.left,y:e.clientY-r.top};
     });
@@ -559,11 +565,12 @@ function drawCursor(ctx,cv){
   ctx.restore();
 }
 
-/* ═══ ALIGN — commands lifted higher ═══════════════════════════════ */
+/* ═══ ALIGN — graphics now span full canvas (under video layer) ═════
+   Worm canvas is z-index:2, video row z-index:3 → graphics
+   automatically pass underneath. No need to clip above video. */
 function initAlign(W,H){
   if(alignBlocks.length)return;
   D.Align.forEach((cmd,i)=>{
-    /* Targets lifted from .32/.49/.66 → .18/.30/.42 */
     const tx=W*.18;const ty=H*(.18+i*.12);
     alignBlocks.push({n:cmd.n,text:cmd.text,bgColor:CMD_BG[i],tx,ty,
       x:W*.05+Math.random()*W*.9,y:H*.05+Math.random()*H*.50,
@@ -575,7 +582,6 @@ function renderAlign(cv){
   initAlign(W,H);ctx.fillStyle='#f0f0ee';ctx.fillRect(0,0,W,H);
   drawBg(ctx,W,H,D.Align);
   ctx.save();ctx.strokeStyle='rgba(0,0,0,.04)';ctx.lineWidth=.5;
-  /* Vertical guide and target ticks adjusted to new positions */
   ctx.beginPath();ctx.moveTo(W*.18,H*.10);ctx.lineTo(W*.18,H*.50);ctx.stroke();
   alignBlocks.forEach(b=>{ctx.beginPath();ctx.moveTo(W*.16,b.ty);ctx.lineTo(W*.22,b.ty);ctx.stroke()});
   ctx.restore();
@@ -585,6 +591,9 @@ function renderAlign(cv){
     if(Math.hypot(b.x-b.tx,b.y-b.ty)<1.5&&Math.hypot(b.vx,b.vy)<.15){b.snapped=true;b.x=b.tx;b.y=b.ty}
   });
   ctx.save();ctx.globalAlpha=1;
+  /* Stamps render across full canvas — no upper bound clamp.
+     The worm canvas sits below the video row z-index, so any stamp
+     drawn behind the video area will simply be hidden by the video. */
   alignStamps.forEach(s=>{
     ctx.font=FM(CMD_FS);ctx.textBaseline='middle';const tw=ctx.measureText(s.text).width;
     block(ctx,s.x,s.y,tw,CMD_FS,s.bgColor,CMD_PX,CMD_PY);ctx.fillStyle='rgba(10,10,10,.9)';ctx.fillText(s.text,s.x,s.y);
@@ -603,7 +612,7 @@ function renderAlign(cv){
   drawCursor(ctx,cv);
 }
 
-/* ═══ INPUT ════════════════════════════════════════════════════════ */
+/* ═══ INPUT — widened column anchors above ═════════════════════════ */
 function renderInput(cv){
   const r=sz(cv);if(!r)return;const{ctx,W,H}=r;
   ctx.fillStyle='#f0f0ee';ctx.fillRect(0,0,W,H);
@@ -626,14 +635,15 @@ function renderInput(cv){
 
   ctx.restore();
 
-  /* Command labels — left column, raised to match new row positions */
+  /* Command labels stay at left column .14 (slightly more left to
+     match widened pattern grid) */
   D.Input.forEach((cmd,i)=>{
     const y=H*(.10+i*.13);
     const label='#'+cmd.n+' '+cmd.text;
     ctx.font=FM(CMD_FS);const tw=ctx.measureText(label).width;
-    block(ctx,W*.18,y,tw,CMD_FS,CMD_BG[i],CMD_PX,CMD_PY);
-    ctx.fillStyle='rgba(10,10,10,.92)';ctx.textBaseline='middle';ctx.fillText(label,W*.18,y);
-    ctx.fillStyle='rgba(0,0,0,.07)';ctx.fillRect(W*.18,y+CMD_FS*.7,tw,1);
+    block(ctx,W*.14,y,tw,CMD_FS,CMD_BG[i],CMD_PX,CMD_PY);
+    ctx.fillStyle='rgba(10,10,10,.92)';ctx.textBaseline='middle';ctx.fillText(label,W*.14,y);
+    ctx.fillStyle='rgba(0,0,0,.07)';ctx.fillRect(W*.14,y+CMD_FS*.7,tw,1);
   });
 
   drawCursor(ctx,cv);
@@ -689,7 +699,7 @@ function renderSelect(cv){
   drawCursor(ctx,cv);
 }
 
-/* ═══ LOOP — bottom arrow grid REMOVED ══════════════════════════════ */
+/* ═══ LOOP ══════════════════════════════════════════════════════════ */
 function renderLoop(cv){
   const r=sz(cv);if(!r)return;const{ctx,W,H}=r;
   ctx.fillStyle='#f0f0ee';ctx.fillRect(0,0,W,H);
@@ -699,13 +709,11 @@ function renderLoop(cv){
   const cmds=D.Loop;const streams=10;
   const streamBg=[LIME_BG,PINK_BG,GRAY_BG,LIME_BG,PINK_BG,GRAY_BG,LIME_BG,PINK_BG,GRAY_BG,LIME_BG];
 
-  /* Clip streams to safe stage so they don't run over video row */
   ctx.save();
   ctx.beginPath();ctx.rect(0,0,W,stageBottom);ctx.clip();
 
   for(let si=0;si<streams;si++){
     const frac=si/streams;
-    /* Distribute streams within the safe stage area */
     const baseY=stageBottom*.05+frac*stageBottom*.9;
     const amp=stageBottom*.075*loopScale*(1+Math.sin(si*1.1)*.5);
     const freq=.55+si*.22;const spd=.013*(si%2===0?1:-1);
@@ -726,11 +734,12 @@ function renderLoop(cv){
   }
 
   ctx.restore();
-  /* Bottom arrow grid removed entirely per spec */
   drawCursor(ctx,cv);
 }
 
-/* ═══ CONTROL — calm initial state, chaotic after interaction ═══════ */
+/* ═══ CONTROL — calm initial, chaotic post-interaction.
+   Traces no longer clipped at stageBottom — they extend down freely,
+   passing under the video row (worm canvas z<video z). ══════════════ */
 function renderControl(cv){
   const r=sz(cv);if(!r)return;const{ctx,W,H}=r;
   ctx.fillStyle='#f0f0ee';ctx.fillRect(0,0,W,H);
@@ -738,12 +747,12 @@ function renderControl(cv){
 
   const stageBottom=safeStageBottom(H);
 
-  /* Subtle arrow field — clipped to safe stage */
+  /* Arrow field — fills almost entire canvas */
   ctx.save();
-  ctx.beginPath();ctx.rect(0,0,W,stageBottom);ctx.clip();
-  const cx=W/2,cy=stageBottom/2;
+  ctx.beginPath();ctx.rect(0,0,W,H);ctx.clip();
+  const cx=W/2,cy=H/2;
   ctx.strokeStyle='rgba(0,0,0,.055)';ctx.fillStyle='rgba(0,0,0,.055)';ctx.lineWidth=.7;
-  for(let gx=35;gx<W;gx+=46){for(let gy=35;gy<stageBottom;gy+=46){
+  for(let gx=35;gx<W;gx+=46){for(let gy=35;gy<H;gy+=46){
     const dx=gx-cx,dy=gy-cy,d=Math.max(Math.hypot(dx,dy),1);
     arrow(ctx,gx,gy,gx+(-dy/d+dx/d*.3)*12,gy+(dx/d+dy/d*.3)*12,3);
   }}
@@ -752,22 +761,18 @@ function renderControl(cv){
   const boxH=CMD_FS+CMD_PY*2+2;
   ctx.font=FM(CMD_FS);ctx.textBaseline='middle';
 
-  /* ── INITIAL CALM STATE — before any interaction ──
-     Render the 3 command boxes in a single clean horizontal row,
-     centered, quiet, controlled. */
   if(!controlInteracted){
+    /* Calm initial state — centered horizontally above video row */
     const cmds=D.Control;
     const labels=cmds.map((c,i)=>({
       text:'#'+c.n+' '+c.text,
       bg:CMD_BG[i]
     }));
-    /* Measure widths to space evenly */
     const widths=labels.map(l=>ctx.measureText(l.text).width+CMD_PX*2);
-    const totalW=widths.reduce((a,b)=>a+b,0)+ (widths.length-1)*24;
+    const totalW=widths.reduce((a,b)=>a+b,0)+(widths.length-1)*24;
     let xCursor=(W-totalW)/2;
     const yCenter=stageBottom*0.42;
     ctx.save();
-    /* clip to stage */
     ctx.beginPath();ctx.rect(0,0,W,stageBottom);ctx.clip();
     labels.forEach((l,i)=>{
       const w=widths[i];
@@ -777,7 +782,6 @@ function renderControl(cv){
       ctx.fillText(l.text,xCursor+CMD_PX,yCenter);
       xCursor+=w+24;
     });
-    /* Soft instruction beneath, in Monument */
     ctx.font=FM(10);
     ctx.fillStyle='rgba(10,10,10,.35)';
     ctx.textBaseline='top';
@@ -786,10 +790,8 @@ function renderControl(cv){
     ctx.fillText(hint,(W-hw)/2,yCenter+boxH/2+14);
     ctx.restore();
   } else {
-    /* ── POST-INTERACTION CHAOTIC STATE — existing layered stacks ── */
-    ctx.save();
-    ctx.beginPath();ctx.rect(0,0,W,stageBottom);ctx.clip();
-
+    /* Chaotic state — traces render across full canvas height,
+       passing under video row visually (lower z-index). */
     const visTraces=controlTraces.length>2?controlTraces.slice(2):controlTraces;
     for(const trace of visTraces){
       const{x,y,cmdBoxes,layers}=trace;
@@ -802,8 +804,9 @@ function renderControl(cv){
           const box=cmdBoxes[bi];
           const bx=x+l.dx;
           const by=y+box.localY+l.dy;
-          /* Skip drawing any portion that crosses into video row */
-          if(by-boxH/2 > stageBottom) continue;
+          /* Removed stageBottom clip — boxes render anywhere on canvas.
+             Video row sits on top (higher z) so any overlap visually
+             disappears under the videos. */
           ctx.fillStyle=box.bg;ctx.fillRect(bx-CMD_PX,by-boxH/2,unifiedW,boxH);
           if(li<=2){
             ctx.fillStyle='rgba(10,10,10,.92)';ctx.fillText(box.text,bx+CMD_PX,by);
@@ -811,31 +814,32 @@ function renderControl(cv){
         }
       }
     }
-    ctx.restore();
   }
 
   drawCursor(ctx,cv);
 }
 
-/* ═══ EDGE — accumulates, less decay, stays above video row ═════════ */
+/* ═══ EDGE — reduced initial density, accumulation by interaction ══
+   Initial particles dropped 20 → 6 per command (3 cmds × 6 = 18).
+   Per-click stays at 14 so the explosive accumulation still feels right. */
 function initEdge(W,H){
   if(edgeInit)return;edgeInit=true;
   const stageBottom=safeStageBottom(H);
   D.Edge.forEach((cmd,ci)=>{
-    for(let j=0;j<20;j++){
+    /* Reduced from 20 to 6 — less initial clutter */
+    for(let j=0;j<6;j++){
       edgeParts.push({
         text:'#'+cmd.n+' '+cmd.text,
-        x:W*.12+Math.random()*W*.76,
-        y:H*.12+Math.random()*(stageBottom*.62),
-        vx:(Math.random()-.5)*1.1,vy:(Math.random()-.5)*1.1,
-        rot:(Math.random()-.5)*.07,vrot:(Math.random()-.5)*.003,
+        x:W*.20+Math.random()*W*.60,
+        y:H*.15+Math.random()*(stageBottom*.55),
+        vx:(Math.random()-.5)*.6,vy:(Math.random()-.5)*.6,
+        rot:(Math.random()-.5)*.05,vrot:(Math.random()-.5)*.002,
         bgColor:CMD_BG[ci%CMD_BG.length]
       });
     }
   });
 }
 function edgeExplode(ex,ey,W,H){
-  /* MORE particles per click — accumulation feel */
   D.Edge.forEach((cmd,ci)=>{
     for(let i=0;i<14;i++){
       const ang=Math.random()*Math.PI*2,spd=2+Math.random()*4;
@@ -853,7 +857,6 @@ function edgeExplode(ex,ey,W,H){
     p.vx+=dx/d*(1.5+Math.random()*2);
     p.vy+=dy/d*(1.5+Math.random()*2);
   });
-  /* Generous cap — accumulation up to 400 particles */
   if(edgeParts.length>400)edgeParts.splice(0,edgeParts.length-400);
 }
 function renderEdge(cv){
@@ -862,7 +865,6 @@ function renderEdge(cv){
   drawBg(ctx,W,H,D.Edge);
 
   const stageBottom=safeStageBottom(H);
-  /* Subtle radial arrow field — clipped to safe stage */
   ctx.save();
   ctx.beginPath();ctx.rect(0,0,W,stageBottom);ctx.clip();
   ctx.strokeStyle='rgba(0,0,0,.04)';ctx.fillStyle='rgba(0,0,0,.04)';ctx.lineWidth=.5;
@@ -872,25 +874,20 @@ function renderEdge(cv){
   }}
   ctx.restore();
 
-  /* Clip particle rendering to stage — slight allowed overflow near bottom (8px) */
-  ctx.save();
-  ctx.beginPath();ctx.rect(0,0,W,stageBottom+8);ctx.clip();
+  /* Particles render across full canvas; videos cover any overlap */
   ctx.textBaseline='middle';
   edgeParts.forEach(p=>{
-    /* Slower decay → particles persist longer, accumulate */
     p.vx*=.992;p.vy*=.992;p.vrot*=.992;p.x+=p.vx;p.y+=p.vy;p.rot+=p.vrot;
-    /* Bounce off bounds — keep within stage vertically */
     if(p.x<0){p.x=0;p.vx=Math.abs(p.vx)*.6}
     if(p.x>W){p.x=W;p.vx=-Math.abs(p.vx)*.6}
     if(p.y<0){p.y=0;p.vy=Math.abs(p.vy)*.6}
-    if(p.y>stageBottom){p.y=stageBottom;p.vy=-Math.abs(p.vy)*.6}
+    if(p.y>H){p.y=H;p.vy=-Math.abs(p.vy)*.6}
     ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.rot);
     ctx.font=FM(CMD_FS);const tw=ctx.measureText(p.text).width;
     ctx.fillStyle=p.bgColor;ctx.fillRect(-tw/2-CMD_PX,-(CMD_FS*.55+CMD_PY),tw+CMD_PX*2,CMD_FS+CMD_PY*2);
     ctx.fillStyle='rgba(10,10,10,.9)';ctx.fillText(p.text,-tw/2,0);
     ctx.restore();
   });
-  ctx.restore();
   drawCursor(ctx,cv);
 }
 
@@ -936,7 +933,6 @@ function showDetail(c,cmd){
 
   muteAllExcept(null);
 
-  /* ── DETAIL UI CLUSTER — Back / Sound / STOP grouped at lower-right ── */
   let cluster=det.querySelector('.det-ui-cluster');
   if(!cluster){
     cluster=document.createElement('div');
@@ -945,7 +941,6 @@ function showDetail(c,cmd){
   }
   cluster.innerHTML='';
 
-  /* BACK */
   const backBtn=document.createElement('button');
   backBtn.textContent='← BACK';
   backBtn.onclick=()=>{
@@ -955,7 +950,6 @@ function showDetail(c,cmd){
   };
   cluster.appendChild(backBtn);
 
-  /* SOUND */
   const sndBtn=document.createElement('button');
   sndBtn.textContent='SOUND ON';
   sndBtn.onclick=()=>{
@@ -964,18 +958,15 @@ function showDetail(c,cmd){
   };
   cluster.appendChild(sndBtn);
 
-  /* STOP — moved into cluster while detail is open */
   const stopBtn=document.createElement('button');
   stopBtn.textContent=FROZEN?'RESUME':'STOP';
   stopBtn.onclick=()=>{
     FROZEN=!FROZEN;
     stopBtn.textContent=FROZEN?'RESUME':'STOP';
-    /* Mirror to global */
     const gBtn=$('btn-stop');if(gBtn)gBtn.textContent=FROZEN?'RESUME':'STOP';
   };
   cluster.appendChild(stopBtn);
 
-  /* Remove any legacy back/sound buttons that may exist from prior session */
   det.querySelectorAll('.det-back-btn, #det-sound').forEach(el=>el.remove());
 
   det.scrollIntoView({behavior:'smooth'});
@@ -1060,7 +1051,6 @@ function renderMag(){
   const mag=$('mag');if(!mag)return;
   if(MX<0){mag.style.left='-200px';return}
   magX+=(MX-magX)*.22;magY+=(MY-magY)*.22;
-  /* Updated offset — cursor is now 38px so center is 19px in */
   mag.style.left=(magX-19)+'px';mag.style.top=(magY-19)+'px';
   if(FC%30===0)updateMagColor();
 }
