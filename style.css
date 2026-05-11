@@ -20,10 +20,31 @@ html,body{width:100%;height:100%;overflow:hidden;background:var(--wh);font-famil
 .cw{cursor:pointer;background:rgba(0,0,0,.07);padding:1px 6px;font-size:10px;color:var(--bk);border:none;user-select:none;letter-spacing:.04em;font-family:var(--mon);transition:background .12s,color .12s}
 .cw:hover{background:rgba(0,0,0,.13)}.cw.active{background:var(--bk);color:var(--y)}
 
-#sc{position:fixed;top:var(--bar);left:0;right:0;bottom:0;overflow-y:auto;overflow-x:hidden}
-#sc::-webkit-scrollbar{display:none}#sc{scrollbar-width:none}
+/* SCROLL CONTAINER — magnetic snapping system.
+   scroll-snap-type "y mandatory" makes each section lock into place.
+   "smooth" + snap = the magnetic feel described in spec.
+   scroll-snap-stop "always" prevents skipping past a section.
+   Not aggressive — purely magnetic. */
+#sc{
+  position:fixed;top:var(--bar);left:0;right:0;bottom:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  scroll-snap-type: y mandatory;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+#sc::-webkit-scrollbar{display:none}
+#sc{scrollbar-width:none}
 #tall{width:100%;display:flex;flex-direction:column}
-section{width:100%;position:relative;overflow:hidden}
+
+/* Every direct section becomes a snap anchor */
+section{
+  width:100%;
+  position:relative;
+  overflow:hidden;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
 .sec-bg{position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;object-position:center;display:block;z-index:0}
 
 .bottom-sec{height:100vh;position:relative;background:var(--wh2)}
@@ -31,7 +52,7 @@ section{width:100%;position:relative;overflow:hidden}
 @keyframes errPulse{0%{opacity:0}2%{opacity:1}15%{opacity:.95}40%{opacity:.4}70%{opacity:.08}85%{opacity:0}100%{opacity:0}}
 .theme-sec{height:100vh;position:relative;background:var(--wh2)}
 
-.idx-sec{min-height:100vh;position:relative;overflow:hidden}
+.idx-sec{height:100vh;min-height:100vh;position:relative;overflow:hidden}
 .idx-ctr{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:5}
 .idx-d{font-family:'MonumentIt',var(--mon);font-style:italic;font-size:12px;color:var(--bk);opacity:.4;margin-bottom:20px;letter-spacing:.04em}
 .idx-g{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:620px;width:80%}
@@ -45,24 +66,56 @@ section{width:100%;position:relative;overflow:hidden}
 .s-cat::after{content:"";display:none}
 .worm-cv{position:absolute;top:0;left:0;width:100%;height:100%;z-index:2;cursor:none}
 
-/* VIDEO ROW — wider outer lime margins, balanced spacing */
+/* ─── VIDEO ROW — wider proportions, no horizontal crop ─────────────
+   Changes vs prior pass:
+     - padding 0 4.5%  (was 8%)         → outer lime margins narrower
+     - height calc(31.5vw * 9/16)        → slightly larger overall
+     - .frame margin 0 0.9% (was 1%)     → preserves spacing between
+     - object-fit: contain (was cover)   → NEVER crops video sides
+   The frame still uses flex:1 so all three remain equal width;
+   shifting padding from 8% → 4.5% effectively pushes left video
+   ~3.5% more left and right video ~3.5% more right (symmetric).
+─────────────────────────────────────────────────────────────────── */
 .cat-row{
   position:absolute;
   bottom:0;
   left:0;
   width:100%;
-  height:calc(30vw*9/16);
+  height:calc(31.5vw*9/16);
   z-index:3;
   display:flex;
   justify-content:center;
   gap:0;
-  padding:0 8%;
+  padding:0 4.5%;
   box-sizing:border-box;
   overflow:visible;
 }
-.frame{position:relative;flex:1;height:100%;overflow:hidden;cursor:pointer;background:var(--gr);margin:0 1%}
+.frame{
+  position:relative;
+  flex:1;
+  height:100%;
+  overflow:hidden;
+  cursor:pointer;
+  background:#0a0a0a;
+  margin:0 0.9%;
+}
 
-.frame video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;visibility:visible;opacity:1;z-index:5;background:#ccc}
+/* CRITICAL: object-fit: contain preserves original video composition.
+   cover would crop left/right of widescreen footage — explicitly
+   disallowed by spec. Frame background is dark so any letterboxing
+   reads as part of the design rather than empty space. */
+.frame video{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  display:block;
+  visibility:visible;
+  opacity:1;
+  z-index:5;
+  background:#0a0a0a;
+}
 .fr-ph{position:absolute;inset:0;background:var(--gr);z-index:0}
 
 .s-det{height:100vh;background:var(--wh);display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
@@ -78,7 +131,7 @@ section{width:100%;position:relative;overflow:hidden}
 #ld-logo.vis{opacity:.9}
 #ld-pct{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);font-family:var(--mon);font-size:10px;color:var(--bk);opacity:.28;z-index:4;letter-spacing:.08em}
 
-/* MAGNIFIER — larger and thicker outlined circle */
+/* MAGNIFIER — outlined circle, refined */
 #mag{
   position:fixed;
   width:38px;
@@ -94,7 +147,7 @@ section{width:100%;position:relative;overflow:hidden}
 }
 #mag-ring{display:none}
 
-/* SYSTEM BUTTONS — pale gray, less aggressive */
+/* SYSTEM BUTTONS — pale gray */
 #save-btns{position:fixed;bottom:12px;right:12px;z-index:7000;display:flex;gap:6px}
 .sys-btn{
   font-family:var(--mon);
@@ -123,13 +176,13 @@ section{width:100%;position:relative;overflow:hidden}
 .sys-btn-ghost:hover{color:var(--y)}
 
 
-/* INPUT HINT — matches command label styling (Monument, same size) */
+/* INPUT HINT — tracks new video row height */
 #input-hint-bar{
   display:none;
   position:absolute;
   left:50%;
   transform:translateX(-50%);
-  bottom:calc(30vw*9/16 + 10px);
+  bottom:calc(31.5vw*9/16 + 10px);
   z-index:8;
   font-family:'Monument','Helvetica Neue',Arial,sans-serif;
   font-size:13px;
@@ -143,11 +196,11 @@ section{width:100%;position:relative;overflow:hidden}
 }
 #s-cat-Input .worm-cv{cursor:text}
 
-/* Poster archive mode button */
+/* Poster archive button */
 #btn-poster{font-family:var(--mon);font-size:9px;letter-spacing:.08em;background:rgba(255,204,216,.9);color:rgba(10,10,10,.85);border:none;padding:8px 16px;cursor:pointer;text-transform:uppercase;transition:background .15s,color .15s}
 #btn-poster:hover{background:rgba(255,204,216,1);color:var(--bk)}
 
-/* ── SOUND BUTTON — integrated into system language ── */
+/* ── SOUND BUTTON on frame hover ── */
 .snd-btn{
   position:absolute;
   bottom:8px;right:8px;
@@ -166,24 +219,27 @@ section{width:100%;position:relative;overflow:hidden}
 }
 .frame:hover .snd-btn{opacity:1;pointer-events:auto}
 
-/* ── DETAIL: no black border, cleaner layout ── */
+/* ── DETAIL: no border ── */
 .s-det{border:none!important;outline:none!important}
 .det-room{border:none!important;outline:none!important;box-shadow:none!important}
 
-/* DETAIL UI CLUSTER — Back / Sound grouped at lower-right */
+/* DETAIL UI CLUSTER — Back / Sound / Stop grouped together.
+   Raised upward (bottom:44px, was 12px) so the cluster reads as an
+   intentional system bar rather than sitting at the screen edge.
+   All three buttons share Monument Grotesk, identical sizing. */
 .det-ui-cluster{
   position:absolute;
-  bottom:12px;
-  right:12px;
+  bottom:44px;
+  right:24px;
   z-index:25;
   display:flex;
   gap:6px;
   align-items:center;
 }
-.det-ui-cluster .sys-btn,
 .det-ui-cluster button{
   font-family:'Monument','Helvetica Neue',Arial,sans-serif;
   font-size:9px;
+  font-weight:500;
   letter-spacing:.08em;
   background:rgba(220,220,218,.92);
   color:rgba(10,10,10,.65);
@@ -198,32 +254,24 @@ section{width:100%;position:relative;overflow:hidden}
   color:rgba(10,10,10,.9);
 }
 
-/* Hide the floating global STOP button when detail view is open
-   — it'll be moved INTO the cluster instead */
+/* Hide global STOP when detail view is open — moved into cluster */
 body.detail-open #save-btns{display:none!important}
 
-/* ── Extra outline/border removal for focused video ── */
+/* No borders on detail */
 .s-det,.det-room,#det-room,#det-room video{
   border:none!important;
   outline:none!important;
   box-shadow:none!important;
 }
-#det-room video{
-  object-fit:cover;
-}
-/* ALIGN detail bg texture canvas */
+#det-room video{object-fit:cover}
+
 #det-bg-canvas{
   position:absolute;inset:0;z-index:0;pointer-events:none;
   display:none;
 }
 
 
-/* ── VIDEO COLOR INTEGRATION ─────────────────────────────────────
-   UNIFIED filter across ALL three panels — no per-panel variation.
-   This ensures consistent lime tone across video 1, 2, 3.
-────────────────────────────────────────────────────────────────── */
-
-/* Identical color correction for ALL frame videos */
+/* ── UNIFIED VIDEO COLOR — identical across all panels ── */
 .frame video,
 #det-room video {
   filter:
@@ -233,7 +281,6 @@ body.detail-open #save-btns{display:none!important}
     hue-rotate(-3deg);
 }
 
-/* Lime soft-light overlay — identical on every frame */
 .frame::after {
   content: "";
   position: absolute;
@@ -245,10 +292,8 @@ body.detail-open #save-btns{display:none!important}
   z-index: 2;
 }
 
-/* Sound button stays above overlay */
 .snd-btn { z-index: 10; }
 
-/* Lime overlay on focused detail room */
 .det-room::after {
   content: "";
   position: absolute;
