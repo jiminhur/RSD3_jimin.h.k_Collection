@@ -60,6 +60,7 @@ const GRAY_BG='rgba(210,210,208,1)';
 const CMD_BG=[LIME_BG,PINK_BG,GRAY_BG];
 const BG_ALPHA=0.055;
 const FM=s=>`500 ${s}px 'Monument','Helvetica Neue',Arial,sans-serif`;
+const CMD_FS=13;const CMD_PX=6;const CMD_PY=4;
 
 const $=id=>document.getElementById(id);
 let T=0,FC=0,MX=-1,MY=-1,magX=-200,magY=-200;
@@ -185,113 +186,103 @@ function startWebsite(){
   Colors mix across lines within each stamp.
 */
 /*
-  INPUT: 3×4 woven grid system.
-  ONE fixed font size (FS=13) throughout — no random scaling.
-  Canvas → 3 cols × 4 rows → each keypress claims one cell.
-  5 pattern types create distinct woven structures within the cell.
-  Layering: 3 color passes (lime → pink → gray) each offset slightly,
-  giving the impression of stacked printed layers.
-  No endless vertical repetition. No oversized elements.
+  INPUT: Dense woven typographic field system.
+  Reference: layered letter fields (dense blue 'aaa' rows) with
+  diagonal overlays (red/green curved paths crossing the field).
+  
+  Structure:
+  - 4-col × 3-row anchor grid (12 positions)
+  - Each keypress fills its anchor cell with a DENSE FIELD
+  - Two pattern types: horizontal field + diagonal overlay
+  - Second passes layer on top with color shift
+  - ALL coordinates clamped to canvas bounds — never escape stage
+  
+  Visual goal:
+  - Dense accumulated letter texture like the reference image
+  - Command label overlaid as the crossing element
+  - Fills the interaction stage completely over time
+  - Lime / pink / gray color layering
 */
+const INPUT_COLS=[.06,.31,.56,.78];
+const INPUT_ROWS=[.15,.47,.76];
+const INPUT_ANCHORS=[];
+for(let r=0;r<INPUT_ROWS.length;r++){
+  for(let c=0;c<INPUT_COLS.length;c++){
+    INPUT_ANCHORS.push({col:INPUT_COLS[c],row:INPUT_ROWS[r],ri:r,ci:c});
+  }
+}
+
+/* Clamp a value to [lo, hi] */
+const clamp=(v,lo,hi)=>Math.max(lo,Math.min(hi,v));
+
 function buildInputPattern(ch,cmd,pat,W,H,idx){
-  const FS=13; /* ONE consistent size everywhere */
   const COLORS=[LIME_BG,PINK_BG,GRAY_BG];
   const lines=[];
   const label='#'+cmd.n+' '+cmd.text;
-
-  /* 3-col × 4-row invisible grid */
-  const COLS=3,ROWS=4;
-  const cellW=W*.88/COLS;
-  const cellH=H*.8/ROWS;
-  const col=idx%COLS;
-  const row=Math.floor(idx/COLS)%ROWS;
-  const x0=W*.06+col*cellW;
-  const y0=H*.08+row*cellH;
-  /* Cell center for expansion patterns */
-  const cx=x0+cellW*.5;
-  const cy=y0+cellH*.5;
-
-  if(pat===0){
-    /* HORIZONTAL WEAVE: 3 color layers, each row offset by 8px */
-    const lineH=FS+5;
-    const linesPerLayer=Math.floor(cellH/lineH);
-    for(let li=0;li<3;li++){
-      const xOff=li*8; /* layer offset creates weave depth */
-      for(let ri=0;ri<linesPerLayer;ri++){
-        /* Alternate char and label short form */
-        const txt=ri%2===0?ch:cmd.text.slice(0,10);
-        lines.push({x:x0+xOff,y:y0+ri*lineH+li*2,text:txt,fs:FS,bg:COLORS[li]});
-      }
-    }
-
-  }else if(pat===1){
-    /* DIAGONAL CROSS: 2 diagonal streams crossing the cell */
-    const steps=Math.floor(Math.min(cellW,cellH)/(FS+4));
-    /* Stream A: top-left → bottom-right */
-    for(let li=0;li<3;li++){
-      for(let i=0;i<steps;i++){
-        lines.push({
-          x:x0+i*(cellW/steps)+li*4,
-          y:y0+i*(cellH/steps)+li*2,
-          text:i%2===0?ch:'#'+cmd.n,fs:FS,bg:COLORS[li]
-        });
-      }
-    }
-    /* Stream B: top-right → bottom-left (offset layer) */
-    for(let i=0;i<steps;i++){
-      lines.push({
-        x:x0+cellW-i*(cellW/steps),
-        y:y0+i*(cellH/steps)+6,
-        text:cmd.text.slice(0,6),fs:FS,bg:COLORS[(i+1)%3]
-      });
-    }
-
-  }else if(pat===2){
-    /* CONCENTRIC RINGS: repeated text at 3 expanding distances from center */
-    const radii=[cellH*.18,cellH*.34,cellH*.5];
-    const angles=[0,Math.PI*.5,Math.PI,Math.PI*1.5,Math.PI*.25,Math.PI*.75,Math.PI*1.25,Math.PI*1.75];
-    radii.forEach((rad,li)=>{
-      angles.forEach((ang,ai)=>{
-        const txt=ai%2===0?ch:'#'+cmd.n;
-        lines.push({
-          x:cx+Math.cos(ang)*rad*1.4-10,
-          y:cy+Math.sin(ang)*rad*.7,
-          text:txt,fs:FS,bg:COLORS[li]
-        });
-      });
-    });
-
-  }else if(pat===3){
-    /* STACKED OFFSET COLUMNS: 3 printed copies, each shifted right+down */
-    /* Creates the visible-side-surface depth effect */
-    const colW=cellW/3;
-    [0,1,2].forEach(li=>{
-      const dx=li*6,dy=li*4; /* consistent diagonal offset = printed depth */
-      const linesInCol=Math.floor(cellH/(FS+6));
-      for(let ri=0;ri<linesInCol;ri++){
-        const txt=ri%3===0?ch:ri%3===1?'#'+cmd.n:cmd.text.slice(0,8);
-        lines.push({x:x0+dx,y:y0+ri*(FS+6)+dy,text:txt,fs:FS,bg:COLORS[li]});
-      }
-    });
-
-  }else{
-    /* GRID FILL: deterministic 4×3 sub-grid within cell — no randomness */
-    const subCols=4,subRows=3;
-    const sw=cellW/subCols,sh=cellH/subRows;
-    for(let ri=0;ri<subRows;ri++){
-      for(let ci=0;ci<subCols;ci++){
-        const li=(ri+ci)%3;
-        const txt=(ri+ci)%3===0?ch:(ri+ci)%3===1?'#'+cmd.n:cmd.text.slice(0,7);
-        lines.push({
-          x:x0+ci*sw,y:y0+ri*sh,
-          text:txt,fs:FS,bg:COLORS[li]
-        });
-      }
+  
+  /* Select anchor — cycle through 12, then layer again */
+  const pass=Math.floor(idx/12);
+  const anchor=INPUT_ANCHORS[idx%12];
+  
+  /* Cell dimensions — each anchor "owns" its grid cell */
+  const cellW=W*(INPUT_COLS[1]-INPUT_COLS[0]);  /* ~25% W */
+  const cellH=H*(INPUT_ROWS[1]-INPUT_ROWS[0]);  /* ~32% H */
+  
+  /* Cell origin — anchor is top-left of cell */
+  /* Clamp so cell never starts where it would overflow canvas */
+  const x0=clamp(anchor.col*W, 0, W-cellW);
+  const y0=clamp(anchor.row*H, 0, H-cellH);
+  
+  /* Pass offset: small diagonal shift per accumulation pass */
+  const pdx=pass*5;const pdy=pass*4;
+  
+  const colorIdx=(idx+pass)%3;
+  const colorB=COLORS[(colorIdx+1)%3];
+  const colorC=COLORS[(colorIdx+2)%3];
+  
+  const step=CMD_FS+4;  /* tight line spacing for dense field */
+  
+  /* ── PATTERN A: HORIZONTAL DENSE FIELD (ref: blue aaa rows) ── */
+  /* Fill cell with tight horizontal rows of the typed char */
+  /* This is the "background texture" layer */
+  const rowCount=Math.floor(cellH/step);
+  const charStep=CMD_FS+2;  /* tight horizontal char spacing */
+  for(let ri=0;ri<rowCount;ri++){
+    const y=clamp(y0+ri*step+pdy, 0, H-CMD_FS);
+    /* How many chars fit across the cell */
+    const charCount=Math.floor(cellW/charStep);
+    for(let ci=0;ci<charCount;ci++){
+      const x=clamp(x0+ci*charStep+pdx, 0, W-CMD_FS);
+      /* Alternate char and short label fragment */
+      const txt=ci%4===0?'#'+cmd.n:ch;
+      lines.push({x,y,text:txt,fs:CMD_FS,bg:COLORS[colorIdx]});
     }
   }
-
+  
+  /* ── PATTERN B: DIAGONAL COMMAND OVERLAY (ref: red/green curved paths) ── */
+  /* The command label runs diagonally across the cell */
+  /* Direction alternates by anchor position */
+  const diagCount=Math.max(4,rowCount-1);
+  const dirX=(anchor.ci%2===0?1:-1);  /* odd cols go left, even go right */
+  const dirY=1;  /* always downward */
+  for(let di=0;di<diagCount;di++){
+    const t=di/(diagCount-1);  /* 0→1 across the diagonal */
+    const x=clamp(
+      anchor.ci%2===0
+        ? x0+t*cellW*0.8+pdx       /* left→right */
+        : x0+cellW*(1-t*0.8)+pdx,  /* right→left */
+      0, W-80
+    );
+    const y=clamp(y0+di*step+step*0.5+pdy, 0, H-CMD_FS);
+    lines.push({x,y,text:label,fs:CMD_FS,bg:colorB});
+  }
+  
+  /* ── PATTERN C: ANCHOR MARKER — command always readable at top of cell ── */
+  const markerY=clamp(y0+pdy-step, 0, H-CMD_FS);
+  lines.push({x:clamp(x0+pdx,0,W-80),y:markerY,text:label,fs:CMD_FS,bg:colorC});
+  
   inputStamps.push({lines,born:Date.now()});
-  if(inputStamps.length>48)inputStamps.shift();
+  if(inputStamps.length>72)inputStamps.shift();
 }
 
 /* ─── Index / Sections ──────────────────────────────────────────── */
@@ -594,15 +585,15 @@ function renderAlign(cv){
   });
   ctx.save();ctx.globalAlpha=1;
   alignStamps.forEach(s=>{
-    ctx.font=FM(12);ctx.textBaseline='middle';const tw=ctx.measureText(s.text).width;
-    block(ctx,s.x,s.y,tw,12,s.bgColor,4,3);ctx.fillStyle='rgba(10,10,10,.9)';ctx.fillText(s.text,s.x,s.y);
+    ctx.font=FM(CMD_FS);ctx.textBaseline='middle';const tw=ctx.measureText(s.text).width;
+    block(ctx,s.x,s.y,tw,CMD_FS,s.bgColor,CMD_PX,CMD_PY);ctx.fillStyle='rgba(10,10,10,.9)';ctx.fillText(s.text,s.x,s.y);
   });
   ctx.restore();
   ctx.textBaseline='middle';
   alignBlocks.forEach(b=>{
-    const label='#'+b.n+' '+b.text;ctx.font=FM(16);const tw=ctx.measureText(label).width;
-    block(ctx,b.x,b.y,tw,16,b.bgColor,6,4);ctx.fillStyle='rgba(10,10,10,.92)';ctx.fillText(label,b.x,b.y);
-    ctx.fillStyle='rgba(0,0,0,.07)';ctx.fillRect(b.x,b.y+10,tw,1);
+    const label='#'+b.n+' '+b.text;ctx.font=FM(CMD_FS);const tw=ctx.measureText(label).width;
+    block(ctx,b.x,b.y,tw,CMD_FS,b.bgColor,CMD_PX,CMD_PY);ctx.fillStyle='rgba(10,10,10,.92)';ctx.fillText(label,b.x,b.y);
+    ctx.fillStyle='rgba(0,0,0,.07)';ctx.fillRect(b.x,b.y+CMD_FS*.7,tw,1);
     if(!b.snapped&&Math.hypot(b.x-b.tx,b.y-b.ty)>20){
       ctx.strokeStyle='rgba(0,0,0,.06)';ctx.fillStyle='rgba(0,0,0,.06)';ctx.lineWidth=.7;
       arrow(ctx,b.x+tw+4,b.y,b.tx+tw*.3+4,b.ty,2.5);
@@ -617,6 +608,10 @@ function renderInput(cv){
   ctx.fillStyle='#f0f0ee';ctx.fillRect(0,0,W,H);
   drawBg(ctx,W,H,D.Input);
 
+  /* Clip to canvas bounds — stamps can never escape the stage */
+  ctx.save();
+  ctx.beginPath();ctx.rect(0,0,W,H);ctx.clip();
+
   /* Draw all static pattern stamps */
   ctx.textBaseline='middle';
   for(const stamp of inputStamps){
@@ -628,14 +623,16 @@ function renderInput(cv){
     }
   }
 
+  ctx.restore(); /* end canvas clip */
+
   /* Command labels — topmost, left column at W*.18 */
   D.Input.forEach((cmd,i)=>{
     const y=H*(.22+i*.27);
     const label='#'+cmd.n+' '+cmd.text;
-    ctx.font=FM(15);const tw=ctx.measureText(label).width;
-    block(ctx,W*.18,y,tw,15,CMD_BG[i],6,4);
+    ctx.font=FM(CMD_FS);const tw=ctx.measureText(label).width;
+    block(ctx,W*.18,y,tw,CMD_FS,CMD_BG[i],CMD_PX,CMD_PY);
     ctx.fillStyle='rgba(10,10,10,.92)';ctx.textBaseline='middle';ctx.fillText(label,W*.18,y);
-    ctx.fillStyle='rgba(0,0,0,.07)';ctx.fillRect(W*.18,y+10,tw,1);
+    ctx.fillStyle='rgba(0,0,0,.07)';ctx.fillRect(W*.18,y+CMD_FS*.7,tw,1);
   });
 
   drawCursor(ctx,cv);
@@ -680,8 +677,8 @@ function renderSelect(cv){
       ctx.save();ctx.strokeStyle='rgba(0,0,0,.07)';ctx.lineWidth=.7;
       ctx.beginPath();ctx.moveTo(tag.wireX,tag.wireY);ctx.lineTo(tag.wireX+gatherX,tag.wireY+tag.offset);ctx.stroke();
       ctx.translate(tag.wireX+gatherX,tag.wireY+tag.offset);ctx.rotate(tag.tilt||0);
-      ctx.font=FM(13);const tw=ctx.measureText(tag.text).width;
-      ctx.fillStyle=tag.bgColor;ctx.fillRect(-tw/2-6,-12,tw+12,24);
+      ctx.font=FM(CMD_FS);const tw=ctx.measureText(tag.text).width;
+      ctx.fillStyle=tag.bgColor;ctx.fillRect(-tw/2-CMD_PX,-(CMD_FS*.55+CMD_PY),tw+CMD_PX*2,CMD_FS+CMD_PY*2);
       ctx.fillStyle='rgba(10,10,10,.9)';ctx.textBaseline='middle';ctx.fillText(tag.text,-tw/2,0);
       ctx.restore();
     });
@@ -747,14 +744,14 @@ function renderControl(cv){
   }}
 
   /* Draw all traces — unified box width (longest label drives all) */
-  const boxH=26,boxPad=4;
-  ctx.font=FM(13);ctx.textBaseline='middle';
+  const boxH=CMD_FS+CMD_PY*2+2;
+  ctx.font=FM(CMD_FS);ctx.textBaseline='middle';
 
   for(const trace of controlTraces){
     const{x,y,cmdBoxes,layers}=trace;
     /* Compute max label width so all boxes share same width */
     const maxW=Math.max(...cmdBoxes.map(b=>ctx.measureText(b.text).width));
-    const unifiedW=maxW+boxPad*2;
+    const unifiedW=maxW+CMD_PX*2;
 
     for(let li=layers.length-1;li>=0;li--){
       const l=layers[li];
@@ -763,9 +760,9 @@ function renderControl(cv){
         const bx=x+l.dx;
         const by=y+box.localY+l.dy;
         /* All boxes same width */
-        ctx.fillStyle=box.bg;ctx.fillRect(bx-boxPad,by-boxH/2,unifiedW,boxH);
+        ctx.fillStyle=box.bg;ctx.fillRect(bx-CMD_PX,by-boxH/2,unifiedW,boxH);
         if(li<=2){
-          ctx.fillStyle='rgba(10,10,10,.92)';ctx.fillText(box.text,bx,by);
+          ctx.fillStyle='rgba(10,10,10,.92)';ctx.fillText(box.text,bx+CMD_PX,by);
         }
       }
     }
@@ -779,7 +776,7 @@ function initEdge(W,H){
   if(edgeInit)return;edgeInit=true;
   D.Edge.forEach((cmd,ci)=>{
     for(let j=0;j<20;j++){
-      edgeParts.push({text:'#'+cmd.n+' '+cmd.text,x:W*.12+Math.random()*W*.76,y:H*.12+Math.random()*H*.76,vx:(Math.random()-.5)*1.1,vy:(Math.random()-.5)*1.1,rot:(Math.random()-.5)*.07,vrot:(Math.random()-.5)*.003,fs:14,bgColor:CMD_BG[ci%CMD_BG.length]});
+      edgeParts.push({text:'#'+cmd.n+' '+cmd.text,x:W*.12+Math.random()*W*.76,y:H*.12+Math.random()*H*.76,vx:(Math.random()-.5)*1.1,vy:(Math.random()-.5)*1.1,rot:(Math.random()-.5)*.07,vrot:(Math.random()-.5)*.003,bgColor:CMD_BG[ci%CMD_BG.length]});
     }
   });
 }
@@ -787,7 +784,7 @@ function edgeExplode(ex,ey,W,H){
   D.Edge.forEach((cmd,ci)=>{
     for(let i=0;i<8;i++){
       const ang=Math.random()*Math.PI*2,spd=2+Math.random()*4;
-      edgeParts.push({text:'#'+cmd.n+' '+cmd.text,x:ex,y:ey,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd,rot:Math.random()*Math.PI,vrot:(Math.random()-.5)*.02,fs:14,bgColor:CMD_BG[ci%CMD_BG.length]});
+      edgeParts.push({text:'#'+cmd.n+' '+cmd.text,x:ex,y:ey,vx:Math.cos(ang)*spd,vy:Math.sin(ang)*spd,rot:Math.random()*Math.PI,vrot:(Math.random()-.5)*.02,bgColor:CMD_BG[ci%CMD_BG.length]});
     }
   });
   edgeParts.forEach(p=>{const dx=p.x-ex,dy=p.y-ey,d=Math.max(Math.hypot(dx,dy),1);p.vx+=dx/d*(1.5+Math.random()*2);p.vy+=dy/d*(1.5+Math.random()*2)});
@@ -805,8 +802,8 @@ function renderEdge(cv){
     if(p.x<0){p.x=0;p.vx=Math.abs(p.vx)*.6}if(p.x>W){p.x=W;p.vx=-Math.abs(p.vx)*.6}
     if(p.y<0){p.y=0;p.vy=Math.abs(p.vy)*.6}if(p.y>H){p.y=H;p.vy=-Math.abs(p.vy)*.6}
     ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.rot);
-    ctx.font=FM(p.fs);const tw=ctx.measureText(p.text).width;
-    ctx.fillStyle=p.bgColor;ctx.fillRect(-tw/2-3,-p.fs*.55-2,tw+6,p.fs+4);
+    ctx.font=FM(CMD_FS);const tw=ctx.measureText(p.text).width;
+    ctx.fillStyle=p.bgColor;ctx.fillRect(-tw/2-CMD_PX,-(CMD_FS*.55+CMD_PY),tw+CMD_PX*2,CMD_FS+CMD_PY*2);
     ctx.fillStyle='rgba(10,10,10,.9)';ctx.fillText(p.text,-tw/2,0);
     ctx.restore();
   });
@@ -920,7 +917,8 @@ function drawDetBgTexture(cv,cmdText){
 function generatePrint(){
   $('print-overlay')?.classList.remove('hide');
   const cv=$('print-cv');
-  const PW=2480,PH=3508;
+  /* A4 at 600 DPI = 4960×7016px — display at 620×877px (8× scale) */
+  const PW=4960,PH=7016;
   cv.width=PW;cv.height=PH;cv.style.width='620px';cv.style.height='877px';
   const ctx=cv.getContext('2d');
   ctx.fillStyle='#f8f8f6';ctx.fillRect(0,0,PW,PH);
@@ -938,10 +936,10 @@ function generatePrint(){
     ctx.strokeStyle='rgba(0,0,0,.03)';ctx.lineWidth=1;
     ctx.beginPath();ctx.moveTo(0,y0+secH);ctx.lineTo(PW,y0+secH);ctx.stroke();
   });
-  ctx.font=`500 28px 'Monument','Helvetica Neue',Arial,sans-serif`;
+  ctx.font=`500 56px 'Monument','Helvetica Neue',Arial,sans-serif`;
   ctx.fillStyle='rgba(0,0,0,.18)';ctx.textBaseline='bottom';
-  ctx.fillText('THIS WEB DOES NOT COMPLY — BEHAVIORAL DISTORTION ARCHIVE',40,PH-16);
-  ctx.fillText(new Date().toISOString().slice(0,10),PW-300,PH-16);
+  ctx.fillText('THIS WEB DOES NOT COMPLY — BEHAVIORAL DISTORTION ARCHIVE',80,PH-32);
+  ctx.fillText(new Date().toISOString().slice(0,10),PW-600,PH-32);
 }
 
 /* ─── Poster Generator (improved composition) ───────────────────── */
@@ -954,57 +952,81 @@ function generatePrint(){
 function generatePoster(){
   $('print-overlay')?.classList.remove('hide');
   const cv=$('print-cv');
-  /* A3 @ 300dpi */
+  /* A3 @ 300dpi = 3508×4961. Display at ~620px wide. */
   const PW=3508,PH=4961;
   cv.width=PW;cv.height=PH;cv.style.width='620px';cv.style.height='877px';
   const ctx=cv.getContext('2d');
-  /* Pale background — not gray box, just a wash */
   ctx.fillStyle='#f4f4f2';ctx.fillRect(0,0,PW,PH);
 
-  /* Hierarchical composition:
-     - Primary: LOOP fills background at full width
-     - Secondary: ALIGN + CONTROL overlap as medium layers
-     - Tertiary: INPUT + SELECT + EDGE as smaller fragments
-     All use multiply blend for organic color mixing */
+  /*
+    POSTER LOGIC: 10 irregular crop-and-place regions.
+    Each region is a CROP from a worm canvas — no distortion, 1:1 pixels.
+    Regions are placed to fill the poster densely with overlaps.
+    Proportions preserved: we crop a rect from source, place same-size rect on poster.
+    Blend: multiply for color interaction between layers.
+  */
 
-  const layers=[
-    /* [cat, x,        y,        w,       h,       alpha] */
-    /* Background — full width */
-    ['Loop',    0,        0,        PW,      PH*.45,  .75],
-    /* Large secondary — left-anchored */
-    ['Control', 0,        PH*.35,   PW*.65,  PH*.38,  .85],
-    /* Large secondary — right-anchored */
-    ['Align',   PW*.35,   PH*.28,   PW*.65,  PH*.35,  .85],
-    /* Medium — centered overlap */
-    ['Select',  PW*.15,   PH*.55,   PW*.7,   PH*.28,  .8 ],
-    /* Small fragment — lower left */
-    ['Input',   0,        PH*.72,   PW*.55,  PH*.28,  .75],
-    /* Small fragment — lower right */
-    ['Edge',    PW*.45,   PH*.68,   PW*.55,  PH*.32,  .75],
+  /* Get all available worm canvases */
+  const worms={};
+  cats.forEach(c=>{
+    const cv=$('worm-'+c);
+    if(cv&&cv.width>0&&cv.height>0)worms[c]=cv;
+  });
+
+  /* 10 crop regions — each defined as:
+     {cat, sx_frac, sy_frac, sw_frac, sh_frac, dx, dy, scale, alpha}
+     sx/sy/sw/sh are fractions of the source canvas.
+     dx/dy are pixel positions on the poster.
+     scale: how much to scale the crop when placing (1.0 = no distortion).
+     
+     We allow uniform scale (both axes same factor) to fill space,
+     but NO non-uniform scaling that would distort proportions.
+  */
+  const regions=[
+    /* Large anchors — top and bottom */
+    {c:'Loop',    sx:.0, sy:.0, sw:.85, sh:.55, dx:0,        dy:0,        sc:1.30, a:.88},
+    {c:'Control', sx:.1, sy:.3, sw:.90, sh:.55, dx:PW*.30,   dy:PH*.08,   sc:1.20, a:.82},
+    /* Mid-level fragments */
+    {c:'Align',   sx:.05,sy:.2, sw:.60, sh:.60, dx:0,        dy:PH*.36,   sc:1.15, a:.85},
+    {c:'Select',  sx:.3, sy:.1, sw:.70, sh:.65, dx:PW*.28,   dy:PH*.30,   sc:1.10, a:.80},
+    {c:'Edge',    sx:.1, sy:.0, sw:.80, sh:.50, dx:PW*.20,   dy:PH*.54,   sc:1.25, a:.82},
+    /* Smaller detail crops */
+    {c:'Input',   sx:.0, sy:.3, sw:.55, sh:.45, dx:0,        dy:PH*.63,   sc:1.05, a:.78},
+    {c:'Loop',    sx:.4, sy:.4, sw:.60, sh:.50, dx:PW*.40,   dy:PH*.60,   sc:1.15, a:.75},
+    {c:'Control', sx:.0, sy:.5, sw:.50, sh:.45, dx:PW*.50,   dy:PH*.75,   sc:1.10, a:.80},
+    /* Bottom fill — make poster feel completely full */
+    {c:'Align',   sx:.2, sy:.5, sw:.75, sh:.45, dx:0,        dy:PH*.80,   sc:1.20, a:.75},
+    {c:'Select',  sx:.0, sy:.0, sw:.45, sh:.55, dx:PW*.55,   dy:PH*.82,   sc:1.10, a:.78},
   ];
 
-  for(const [c,px,py,pw,ph,alpha] of layers){
-    const wormCv=$('worm-'+c);
-    if(!wormCv||wormCv.width===0||wormCv.height===0)continue;
+  for(const reg of regions){
+    const src=worms[reg.c];if(!src)continue;
+    const dpr=devicePixelRatio||1;
+    /* Source crop in canvas pixels */
+    const srcCropX=reg.sx*src.width;
+    const srcCropY=reg.sy*src.height;
+    const srcCropW=reg.sw*src.width;
+    const srcCropH=reg.sh*src.height;
+    /* Destination size: uniform scale (preserves proportion) */
+    /* Convert from canvas-pixel source to CSS-pixel equivalent first */
+    const cssW=(srcCropW/dpr)*reg.sc;
+    const cssH=(srcCropH/dpr)*reg.sc;
+    /* Scale back to poster pixels (poster has no dpr scaling) */
+    const destW=cssW;const destH=cssH;
+
     ctx.save();
-    ctx.globalAlpha=alpha;
+    ctx.globalAlpha=reg.a;
     ctx.globalCompositeOperation='multiply';
-    const srcW=wormCv.width,srcH=wormCv.height;
-    /* Contain: preserve aspect ratio within bounds */
-    const srcAR=srcW/srcH,destAR=pw/ph;
-    let dw,dh,dx,dy;
-    if(srcAR>destAR){dw=pw;dh=pw/srcAR;dx=px;dy=py+(ph-dh)/2}
-    else{dh=ph;dw=ph*srcAR;dx=px+(pw-dw)/2;dy=py}
-    ctx.drawImage(wormCv,0,0,srcW,srcH,dx,dy,dw,dh);
+    ctx.drawImage(src,srcCropX,srcCropY,srcCropW,srcCropH,reg.dx,reg.dy,destW,destH);
     ctx.restore();
   }
 
   /* Footer */
   ctx.globalCompositeOperation='source-over';ctx.globalAlpha=1;
-  ctx.font=`500 42px 'Monument','Helvetica Neue',Arial,sans-serif`;
-  ctx.fillStyle='rgba(0,0,0,.3)';ctx.textBaseline='bottom';
+  ctx.font=`500 48px 'Monument','Helvetica Neue',Arial,sans-serif`;
+  ctx.fillStyle='rgba(0,0,0,.25)';ctx.textBaseline='bottom';
   ctx.fillText('THIS WEB DOES NOT COMPLY',48,PH-24);
-  ctx.fillText(new Date().toISOString().slice(0,10),PW-480,PH-24);
+  ctx.fillText(new Date().toISOString().slice(0,10),PW-520,PH-24);
 }
 
 /* ─── Main Loop ──────────────────────────────────────────────────── */
